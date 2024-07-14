@@ -17,6 +17,12 @@ const (
 	templateConfig = ".proj.yml"
 )
 
+var getters = map[string]getter.Getter{
+	"file":  &getter.FileGetter{Copy: true},
+	"git":   new(getter.GitGetter),
+	"https": &getter.HttpGetter{Netrc: true},
+}
+
 type InitCommand struct{}
 
 func (cmd InitCommand) Name() string {
@@ -35,7 +41,8 @@ func (cmd InitCommand) Execute(args []string) error {
 		return err
 	}
 
-	if err := getter.GetAny(dst, src); err != nil {
+	err := getter.GetAny(dst, src, getter.WithGetters(getters))
+	if err != nil {
 		return err
 	}
 

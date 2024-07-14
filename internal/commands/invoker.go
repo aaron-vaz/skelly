@@ -2,11 +2,11 @@ package commands
 
 import "github.com/aaron-vaz/proj/internal/commands/templates"
 
-var commandsList []Command = []Command{
+var commandsList = []Command{
 	templates.InitCommand{},
 }
 
-var availableCommands map[string]Command = map[string]Command{}
+var availableCommands = map[string]Command{}
 
 func init() {
 	for _, cmd := range commandsList {
