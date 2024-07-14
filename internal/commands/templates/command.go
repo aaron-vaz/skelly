@@ -3,6 +3,7 @@ package templates
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -42,6 +43,7 @@ func (cmd InitCommand) Execute(args []string) error {
 
 	// No need to continue if the file doesn't exist
 	if errors.Is(err, os.ErrNotExist) {
+		fmt.Printf("No %s file found in %s, exiting....\n", templateConfig, dst)
 		return nil
 	} else if err != nil {
 		return err
@@ -55,14 +57,17 @@ func (cmd InitCommand) Execute(args []string) error {
 
 	// walk through all files in the destination dir
 	return filepath.WalkDir(dst, func(path string, d fs.DirEntry, err error) error {
-		// if path errored straight away return immediately
-		if err != nil {
+		// a reason for WalkDir to walk a file that doesn't exist is if the file was renamed when reading
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+			// if path errored straight away return immediately
+		} else if err != nil {
 			return err
 		}
 
-		// create template file name if name was templated
-		templatedName := path // run templating code here
-		if err := os.Rename(path, templatedName); err != nil {
+		// check if filename was templated
+		tFilePath, err := config.ProcessTemplatedFileName(path)
+		if err != nil {
 			return err
 		}
 
@@ -72,6 +77,6 @@ func (cmd InitCommand) Execute(args []string) error {
 		}
 
 		// template file contents
-		return template.TemplatedFile(path).Render(config)
+		return config.ProcessTemplatedFile(tFilePath)
 	})
 }

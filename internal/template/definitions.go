@@ -2,7 +2,7 @@ package template
 
 type Data struct {
 	Name string `yaml:"name"`
-	Type any    `yaml:"type"`
+	Type string `yaml:"type"`
 }
 
 type Input struct {

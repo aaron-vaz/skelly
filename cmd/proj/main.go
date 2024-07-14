@@ -8,7 +8,7 @@ import (
 
 func main() {
 	if err := commands.Invoke(os.Args); err != nil {
-		os.Stderr.WriteString(err.Error())
+		os.Stderr.WriteString(err.Error() + "\n")
 		os.Exit(1)
 	}
 
