@@ -1,14 +1,13 @@
-package templates
+package commands
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
-	"github.com/aaron-vaz/proj/internal/template"
+	"github.com/aaron-vaz/proj/internal/templates"
 	"github.com/hashicorp/go-getter"
 	"gopkg.in/yaml.v2"
 )
@@ -23,47 +22,38 @@ var getters = map[string]getter.Getter{
 	"https": &getter.HttpGetter{Netrc: true},
 }
 
-type InitCommand struct{}
+type InitCommand struct {
+	src string
+	dst string
 
-func (cmd InitCommand) Name() string {
-	return "init"
+	renderer *templates.RendererService
 }
 
-func (cmd InitCommand) Execute(args []string) error {
-	var src string
-	var dst string
-
-	sub := flag.NewFlagSet(cmd.Name(), flag.ExitOnError)
-	sub.StringVar(&src, "src", "", "URL to template that will be used to init the new project")
-	sub.StringVar(&dst, "dst", ".", "Destination dir where the project will be initialised to (Defaults to current directory)")
-
-	if err := sub.Parse(args); err != nil {
-		return err
-	}
-
-	err := getter.GetAny(dst, src, getter.WithGetters(getters))
+func (cmd InitCommand) Execute() error {
+	err := getter.GetAny(cmd.dst, cmd.src, getter.WithGetters(getters))
 	if err != nil {
 		return err
 	}
 
-	configBytes, err := os.ReadFile(filepath.Join(dst, templateConfig))
+	configBytes, err := os.ReadFile(filepath.Join(cmd.dst, templateConfig))
 
 	// No need to continue if the file doesn't exist
+	// Since the repo has been downloaded we can exit
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("No %s file found in %s, exiting....\n", templateConfig, dst)
+		fmt.Printf("No %s file found in %s, exiting....\n", templateConfig, cmd.dst)
 		return nil
 	} else if err != nil {
 		return err
 	}
 
-	var config template.ProjectTemplate
+	var config templates.ProjectTemplate
 	err = yaml.Unmarshal(configBytes, &config)
 	if err != nil {
 		return err
 	}
 
 	// walk through all files in the destination dir
-	return filepath.WalkDir(dst, func(path string, d fs.DirEntry, err error) error {
+	return filepath.WalkDir(cmd.dst, func(path string, d fs.DirEntry, err error) error {
 		// a reason for WalkDir to walk a file that doesn't exist is if the file was renamed when reading
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -73,7 +63,7 @@ func (cmd InitCommand) Execute(args []string) error {
 		}
 
 		// check if filename was templated
-		tFilePath, err := config.ProcessTemplatedFileName(path)
+		tFilePath, err := cmd.renderer.RenderFile(config, path)
 		if err != nil {
 			return err
 		}
@@ -84,6 +74,14 @@ func (cmd InitCommand) Execute(args []string) error {
 		}
 
 		// template file contents
-		return config.ProcessTemplatedFile(tFilePath)
+		return cmd.renderer.RenderFileContents(config, tFilePath)
 	})
+}
+
+func NewInitCommand(src string, dst string, renderer *templates.RendererService) InitCommand {
+	return InitCommand{
+		src:      src,
+		dst:      dst,
+		renderer: renderer,
+	}
 }
