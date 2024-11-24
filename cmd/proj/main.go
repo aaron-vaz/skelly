@@ -5,12 +5,14 @@ import (
 
 	"github.com/aaron-vaz/proj/internal/cli"
 	"github.com/aaron-vaz/proj/internal/commands"
+	"github.com/aaron-vaz/proj/internal/download"
 	"github.com/aaron-vaz/proj/internal/templates"
 )
 
 type Proj struct {
-	renderer *templates.RendererService
-	invoker  commands.Invoker
+	downloader download.Downloader
+	renderer   *templates.RendererService
+	invoker    commands.Invoker
 }
 
 func (p *Proj) Run() error {
@@ -18,11 +20,13 @@ func (p *Proj) Run() error {
 }
 
 func main() {
+	downloader := download.NewGoGetterDownloader()
 	renderer := templates.NewRendererService()
-	invoker := cli.NewFlagCommandInvoker(renderer)
+	invoker := cli.NewFlagCommandInvoker(downloader, renderer)
 	proj := &Proj{
-		renderer: renderer,
-		invoker:  invoker,
+		downloader: downloader,
+		renderer:   renderer,
+		invoker:    invoker,
 	}
 
 	if err := proj.Run(); err != nil {

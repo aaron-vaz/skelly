@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/aaron-vaz/proj/internal/download"
 	"github.com/aaron-vaz/proj/internal/templates"
-	"github.com/hashicorp/go-getter"
 	"gopkg.in/yaml.v2"
 )
 
@@ -16,24 +16,19 @@ const (
 	templateConfig = ".proj.yml"
 )
 
-var getters = map[string]getter.Getter{
-	"file":  &getter.FileGetter{Copy: true},
-	"git":   new(getter.GitGetter),
-	"https": &getter.HttpGetter{Netrc: true},
-}
-
 type InitOptions struct {
 	Source      string
 	Destination string
 }
 
 type InitCommand struct {
-	renderer *templates.RendererService
-	options  InitOptions
+	renderer   *templates.RendererService
+	downloader download.Downloader
+	options    InitOptions
 }
 
 func (cmd InitCommand) Execute() error {
-	err := getter.GetAny(cmd.options.Destination, cmd.options.Source, getter.WithGetters(getters))
+	err := cmd.downloader.Get(cmd.options.Source, cmd.options.Destination)
 	if err != nil {
 		return err
 	}
@@ -81,9 +76,10 @@ func (cmd InitCommand) Execute() error {
 	})
 }
 
-func NewInitCommand(options InitOptions, renderer *templates.RendererService) InitCommand {
+func NewInitCommand(downloader download.Downloader, renderer *templates.RendererService, options InitOptions) InitCommand {
 	return InitCommand{
-		renderer: renderer,
-		options:  options,
+		downloader: downloader,
+		renderer:   renderer,
+		options:    options,
 	}
 }
