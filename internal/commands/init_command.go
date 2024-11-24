@@ -22,25 +22,28 @@ var getters = map[string]getter.Getter{
 	"https": &getter.HttpGetter{Netrc: true},
 }
 
-type InitCommand struct {
-	src string
-	dst string
+type InitOptions struct {
+	Source      string
+	Destination string
+}
 
+type InitCommand struct {
 	renderer *templates.RendererService
+	options  InitOptions
 }
 
 func (cmd InitCommand) Execute() error {
-	err := getter.GetAny(cmd.dst, cmd.src, getter.WithGetters(getters))
+	err := getter.GetAny(cmd.options.Destination, cmd.options.Source, getter.WithGetters(getters))
 	if err != nil {
 		return err
 	}
 
-	configBytes, err := os.ReadFile(filepath.Join(cmd.dst, templateConfig))
+	configBytes, err := os.ReadFile(filepath.Join(cmd.options.Destination, templateConfig))
 
 	// No need to continue if the file doesn't exist
 	// Since the repo has been downloaded we can exit
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("No %s file found in %s, exiting....\n", templateConfig, cmd.dst)
+		fmt.Printf("No %s file found in %s, exiting....\n", templateConfig, cmd.options.Destination)
 		return nil
 	} else if err != nil {
 		return err
@@ -53,7 +56,7 @@ func (cmd InitCommand) Execute() error {
 	}
 
 	// walk through all files in the destination dir
-	return filepath.WalkDir(cmd.dst, func(path string, d fs.DirEntry, err error) error {
+	return filepath.WalkDir(cmd.options.Destination, func(path string, d fs.DirEntry, err error) error {
 		// a reason for WalkDir to walk a file that doesn't exist is if the file was renamed when reading
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -78,10 +81,9 @@ func (cmd InitCommand) Execute() error {
 	})
 }
 
-func NewInitCommand(src string, dst string, renderer *templates.RendererService) InitCommand {
+func NewInitCommand(options InitOptions, renderer *templates.RendererService) InitCommand {
 	return InitCommand{
-		src:      src,
-		dst:      dst,
 		renderer: renderer,
+		options:  options,
 	}
 }
