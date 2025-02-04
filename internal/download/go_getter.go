@@ -1,17 +1,16 @@
 package download
 
-import "github.com/hashicorp/go-getter"
+import (
+	"context"
 
-var getters = map[string]getter.Getter{
-	"file":  &getter.FileGetter{Copy: true},
-	"git":   new(getter.GitGetter),
-	"https": &getter.HttpGetter{Netrc: true},
-}
+	"github.com/hashicorp/go-getter/v2"
+)
 
 type GoGetterDownloader struct{}
 
 func (g *GoGetterDownloader) Get(source string, destination string) error {
-	return getter.GetAny(destination, source, getter.WithGetters(getters))
+	_, err := getter.GetAny(context.TODO(), destination, source)
+	return err
 }
 
 func NewGoGetterDownloader() Downloader {
