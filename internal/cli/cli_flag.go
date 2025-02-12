@@ -6,11 +6,13 @@ import (
 	"github.com/aaron-vaz/proj/internal/commands"
 	"github.com/aaron-vaz/proj/internal/download"
 	"github.com/aaron-vaz/proj/internal/templates"
+	"github.com/aaron-vaz/proj/internal/view"
 )
 
 type FlagCommandInvoker struct {
 	downloader download.Downloader
 	renderer   *templates.RendererService
+	view       view.InputView
 }
 
 func (i *FlagCommandInvoker) Execute(args []string) error {
@@ -30,7 +32,7 @@ func (i *FlagCommandInvoker) Execute(args []string) error {
 			Destination: *dst,
 		}
 
-		return commands.NewInitCommand(i.downloader, i.renderer, options).Execute()
+		return commands.NewInitCommand(i.downloader, i.renderer, options, i.view).Execute()
 	case "help":
 	default:
 		flag.Usage()
@@ -39,9 +41,14 @@ func (i *FlagCommandInvoker) Execute(args []string) error {
 	return nil
 }
 
-func NewFlagCommandInvoker(downloader download.Downloader, renderer *templates.RendererService) commands.Invoker {
+func NewFlagCommandInvoker(
+	downloader download.Downloader,
+	renderer *templates.RendererService,
+	view view.InputView,
+) commands.Invoker {
 	return &FlagCommandInvoker{
 		downloader: downloader,
 		renderer:   renderer,
+		view:       view,
 	}
 }

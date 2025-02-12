@@ -9,6 +9,7 @@ import (
 
 	"github.com/aaron-vaz/proj/internal/download"
 	"github.com/aaron-vaz/proj/internal/templates"
+	"github.com/aaron-vaz/proj/internal/view"
 	"gopkg.in/yaml.v2"
 )
 
@@ -24,6 +25,7 @@ type InitOptions struct {
 type InitCommand struct {
 	renderer   *templates.RendererService
 	downloader download.Downloader
+	view       view.InputView
 	options    InitOptions
 }
 
@@ -46,6 +48,12 @@ func (cmd InitCommand) Execute() error {
 
 	var config templates.ProjectTemplate
 	err = yaml.Unmarshal(configBytes, &config)
+	if err != nil {
+		return err
+	}
+
+	// Collect user input defined in the config
+	err = cmd.view.Render(config.Inputs)
 	if err != nil {
 		return err
 	}
@@ -76,10 +84,16 @@ func (cmd InitCommand) Execute() error {
 	})
 }
 
-func NewInitCommand(downloader download.Downloader, renderer *templates.RendererService, options InitOptions) InitCommand {
+func NewInitCommand(
+	downloader download.Downloader,
+	renderer *templates.RendererService,
+	options InitOptions,
+	view view.InputView,
+) InitCommand {
 	return InitCommand{
 		downloader: downloader,
 		renderer:   renderer,
 		options:    options,
+		view:       view,
 	}
 }

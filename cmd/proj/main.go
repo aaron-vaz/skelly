@@ -7,6 +7,7 @@ import (
 	"github.com/aaron-vaz/proj/internal/commands"
 	"github.com/aaron-vaz/proj/internal/download"
 	"github.com/aaron-vaz/proj/internal/templates"
+	"github.com/aaron-vaz/proj/internal/view"
 )
 
 type Proj struct {
@@ -22,7 +23,8 @@ func (p *Proj) Run() error {
 func main() {
 	downloader := download.NewGoGetterDownloader()
 	renderer := templates.NewRendererService()
-	invoker := cli.NewFlagCommandInvoker(downloader, renderer)
+	view := view.NewStdInputView()
+	invoker := cli.NewFlagCommandInvoker(downloader, renderer, view)
 	proj := &Proj{
 		downloader: downloader,
 		renderer:   renderer,
