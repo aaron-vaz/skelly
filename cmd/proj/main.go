@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/aaron-vaz/proj/internal/cli"
@@ -32,7 +33,7 @@ func main() {
 	}
 
 	if err := proj.Run(); err != nil {
-		ui.RenderError(err.Error() + "\n")
+		_ = ui.RenderError(fmt.Sprintf("Issue running proj: %s", err.Error()))
 		os.Exit(1)
 	}
 }
