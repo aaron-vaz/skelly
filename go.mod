@@ -1,8 +1,6 @@
 module github.com/aaron-vaz/proj
 
-go 1.22.7
-
-toolchain go1.23.5
+go 1.24
 
 require (
 	github.com/hashicorp/go-getter/v2 v2.2.3
