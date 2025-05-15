@@ -12,7 +12,7 @@ import (
 type FlagCommandInvoker struct {
 	downloader download.Downloader
 	renderer   *templates.RendererService
-	view       view.InputView
+	ui         view.UI
 }
 
 func (i *FlagCommandInvoker) Execute(args []string) error {
@@ -32,7 +32,7 @@ func (i *FlagCommandInvoker) Execute(args []string) error {
 			Destination: *dst,
 		}
 
-		return commands.NewInitCommand(i.downloader, i.renderer, options, i.view).Execute()
+		return commands.NewInitCommand(i.downloader, i.renderer, options, i.ui).Execute()
 	case "help":
 	default:
 		flag.Usage()
@@ -44,11 +44,11 @@ func (i *FlagCommandInvoker) Execute(args []string) error {
 func NewFlagCommandInvoker(
 	downloader download.Downloader,
 	renderer *templates.RendererService,
-	view view.InputView,
+	ui view.UI,
 ) commands.Invoker {
 	return &FlagCommandInvoker{
 		downloader: downloader,
 		renderer:   renderer,
-		view:       view,
+		ui:         ui,
 	}
 }

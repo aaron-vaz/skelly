@@ -23,8 +23,8 @@ func (p *Proj) Run() error {
 func main() {
 	downloader := download.NewGoGetterDownloader()
 	renderer := templates.NewRendererService()
-	view := view.NewStdInputView()
-	invoker := cli.NewFlagCommandInvoker(downloader, renderer, view)
+	ui := view.NewStdUI(os.Stdin, os.Stdout, os.Stderr)
+	invoker := cli.NewFlagCommandInvoker(downloader, renderer, ui)
 	proj := &Proj{
 		downloader: downloader,
 		renderer:   renderer,
@@ -32,7 +32,7 @@ func main() {
 	}
 
 	if err := proj.Run(); err != nil {
-		os.Stderr.WriteString(err.Error() + "\n")
+		ui.RenderError(err.Error() + "\n")
 		os.Exit(1)
 	}
 }

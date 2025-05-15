@@ -13,10 +13,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-const (
-	templateConfig = ".proj.yml"
-)
-
 type InitOptions struct {
 	Source      string
 	Destination string
@@ -25,23 +21,41 @@ type InitOptions struct {
 type InitCommand struct {
 	renderer   *templates.RendererService
 	downloader download.Downloader
-	view       view.InputView
+	ui         view.UI
 	options    InitOptions
 }
 
 func (cmd InitCommand) Execute() error {
+	// Check if destination is not empty
+	// As user if they want to overwrite the destination
+	if _, err := os.Stat(cmd.options.Destination); err == nil {
+		yesNo, err := cmd.ui.RenderQuestion(fmt.Sprintf("Destination %s Already exists, would you like to overwrite it?", cmd.options.Destination), []string{"y", "n"})
+		if err != nil {
+			return err
+		}
+
+		if yesNo != "y" {
+			return cmd.ui.RenderInfo("Exiting....")
+		}
+
+		// If yes we can delete the destination
+		err = os.RemoveAll(cmd.options.Destination)
+		if err != nil {
+			return err
+		}
+	}
+
 	err := cmd.downloader.Get(cmd.options.Source, cmd.options.Destination)
 	if err != nil {
 		return err
 	}
 
-	configBytes, err := os.ReadFile(filepath.Join(cmd.options.Destination, templateConfig))
+	configBytes, err := os.ReadFile(filepath.Join(cmd.options.Destination, templates.TemplateConfigName))
 
 	// No need to continue if the file doesn't exist
 	// Since the repo has been downloaded we can exit
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Printf("No %s file found in %s, exiting....\n", templateConfig, cmd.options.Destination)
-		return nil
+		return cmd.ui.RenderInfo(fmt.Sprintf("No %s file found in %s, exiting....\n", templates.TemplateConfigName, cmd.options.Destination))
 	} else if err != nil {
 		return err
 	}
@@ -53,7 +67,7 @@ func (cmd InitCommand) Execute() error {
 	}
 
 	// Collect user input defined in the config
-	err = cmd.view.Render(config.Inputs)
+	err = cmd.ui.RenderInputs(config.Inputs)
 	if err != nil {
 		return err
 	}
@@ -88,12 +102,12 @@ func NewInitCommand(
 	downloader download.Downloader,
 	renderer *templates.RendererService,
 	options InitOptions,
-	view view.InputView,
+	ui view.UI,
 ) InitCommand {
 	return InitCommand{
 		downloader: downloader,
 		renderer:   renderer,
 		options:    options,
-		view:       view,
+		ui:         ui,
 	}
 }
