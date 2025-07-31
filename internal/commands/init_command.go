@@ -109,12 +109,11 @@ func (cmd InitCommand) Execute() error {
 }
 
 func NewInitCommand(
+	processor *templates.TemplateProcessor,
 	downloader download.Downloader,
-	renderer *templates.RendererService,
 	options InitOptions,
 	ui view.UI,
 ) InitCommand {
-	processor := templates.NewTemplateProcessor(renderer)
 	return InitCommand{
 		processor:  processor,
 		downloader: downloader,

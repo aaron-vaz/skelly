@@ -24,8 +24,9 @@ func (p *Proj) Run() error {
 func main() {
 	downloader := download.NewGoGetterDownloader()
 	renderer := templates.NewRendererService()
+	processor := templates.NewTemplateProcessor(renderer)
 	ui := view.NewStdUI(os.Stdin, os.Stdout, os.Stderr)
-	invoker := cli.NewFlagCommandInvoker(downloader, renderer, ui)
+	invoker := cli.NewFlagCommandInvoker(downloader, processor, ui)
 	proj := &Proj{
 		downloader: downloader,
 		renderer:   renderer,

@@ -22,7 +22,7 @@ var version = "dev"
 
 type FlagCommandInvoker struct {
 	downloader download.Downloader
-	renderer   *templates.RendererService
+	processor  *templates.TemplateProcessor
 	ui         view.UI
 }
 
@@ -55,7 +55,7 @@ func (i *FlagCommandInvoker) Execute(args []string) error {
 			Destination: *dst,
 		}
 
-		return commands.NewInitCommand(i.downloader, i.renderer, options, i.ui).Execute()
+		return commands.NewInitCommand(i.processor, i.downloader, options, i.ui).Execute()
 	case cmdHelp:
 		command := ""
 		if len(args) > 2 {
@@ -102,12 +102,12 @@ func (i *FlagCommandInvoker) showHelp(command string) {
 
 func NewFlagCommandInvoker(
 	downloader download.Downloader,
-	renderer *templates.RendererService,
+	processor *templates.TemplateProcessor,
 	ui view.UI,
 ) commands.Invoker {
 	return &FlagCommandInvoker{
 		downloader: downloader,
-		renderer:   renderer,
+		processor:  processor,
 		ui:         ui,
 	}
 }
