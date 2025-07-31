@@ -1,6 +1,6 @@
 package view
 
-import "github.com/aaron-vaz/proj/internal/templates"
+import "github.com/aaron-vaz/skelly/internal/templates"
 
 // UI provides methods for rendering user interface elements and handling user interactions
 type UI interface {
