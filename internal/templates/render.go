@@ -2,9 +2,13 @@ package templates
 
 import "fmt"
 
+// Renderer provides functionality for rendering project templates
 type Renderer interface {
+	// Supports checks if this renderer can handle the given project template configuration
 	Supports(config ProjectTemplate) bool
+	// RenderFile processes a template file at the given path and returns the rendered content
 	RenderFile(config ProjectTemplate, path string) (string, error)
+	// RenderFileContents processes and writes the template contents to the destination
 	RenderFileContents(config ProjectTemplate, path string) error
 }
 

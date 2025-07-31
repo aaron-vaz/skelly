@@ -22,7 +22,7 @@ func (s *StdUI) RenderInputs(inputs map[string]templates.Input) error {
 		return nil
 	}
 
-	_, err := s.stdout.WriteString(fmt.Sprintf("Please provide values for inputs defined in %s:\n\n", templates.TemplateConfigName))
+	_, err := fmt.Fprintf(s.stdout, "Please provide values for inputs defined in %s:\n\n", templates.TemplateConfigName)
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func (s *StdUI) RenderInputs(inputs map[string]templates.Input) error {
 }
 
 func (s *StdUI) RenderQuestion(question string, options []string) (string, error) {
-	_, err := s.stdout.WriteString(fmt.Sprintf("%s? [%s]\n", question, strings.Join(options, "/")))
+	_, err := fmt.Fprintf(s.stdout, "%s? [%s]\n", question, strings.Join(options, "/"))
 	if err != nil {
 		return "", err
 	}
@@ -49,24 +49,24 @@ func (s *StdUI) RenderQuestion(question string, options []string) (string, error
 }
 
 func (s *StdUI) RenderInfo(message string) error {
-	_, err := s.stdout.WriteString(fmt.Sprintf("%s\n", message))
+	_, err := fmt.Fprintf(s.stdout, "%s\n", message)
 	return err
 }
 
 func (s *StdUI) RenderError(message string) error {
-	_, err := s.stderr.WriteString(fmt.Sprintf("%s\n", message))
+	_, err := fmt.Fprintf(s.stderr, "%s\n", message)
 	return err
 }
 
 func (s *StdUI) renderInputs(name string, input *templates.Input) error {
-	_, err := s.stdout.WriteString(fmt.Sprintf("%s: \n%s: [%s]\n", name, input.Description, input.Default))
+	_, err := fmt.Fprintf(s.stdout, "%s: \n%s: [%s]\n", name, input.Description, input.Default)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write prompt: %w", err)
 	}
 
 	userInput, err := s.waitForUserInput()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read user input: %w", err)
 	}
 
 	if userInput == "" {

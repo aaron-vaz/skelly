@@ -1,16 +1,17 @@
 package commands
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/aaron-vaz/proj/internal/download"
 	"github.com/aaron-vaz/proj/internal/templates"
 	"github.com/aaron-vaz/proj/internal/view"
-	"gopkg.in/yaml.v2"
 )
 
 type InitOptions struct {
@@ -19,83 +20,92 @@ type InitOptions struct {
 }
 
 type InitCommand struct {
-	renderer   *templates.RendererService
+	processor  *templates.TemplateProcessor
 	downloader download.Downloader
 	ui         view.UI
 	options    InitOptions
 }
 
-func (cmd InitCommand) Execute() error {
-	// Check if destination is not empty
-	// As user if they want to overwrite the destination
-	if _, err := os.Stat(cmd.options.Destination); err == nil {
-		yesNo, err := cmd.ui.RenderQuestion(fmt.Sprintf("Destination %s Already exists, would you like to overwrite it?", cmd.options.Destination), []string{"y", "n"})
+func (cmd InitCommand) validateOptions() error {
+	if cmd.options.Source == "" {
+		return errors.New("source URL is required")
+	}
+
+	// Validate source URL format
+	_, err := url.Parse(cmd.options.Source)
+	if err != nil {
+		return fmt.Errorf("invalid source URL format: %w", err)
+	}
+
+	if cmd.options.Destination == "" {
+		return errors.New("destination path is required")
+	}
+
+	// Validate and normalize destination path
+	dest := filepath.Clean(cmd.options.Destination)
+	if !filepath.IsAbs(dest) {
+		cmd.options.Destination, err = filepath.Abs(dest)
 		if err != nil {
-			return err
+			return fmt.Errorf("invalid destination path: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (cmd InitCommand) Execute() error {
+	if err := cmd.validateOptions(); err != nil {
+		return fmt.Errorf("invalid options: %w", err)
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// Check if destination exists and is not empty
+	// Ask user if they want to overwrite the destination
+	if _, err := os.Stat(cmd.options.Destination); err == nil {
+		yesNo, err := cmd.ui.RenderQuestion(fmt.Sprintf("Destination %s already exists, would you like to overwrite it?", cmd.options.Destination), []string{"y", "n"})
+		if err != nil {
+			return fmt.Errorf("failed to get user input: %w", err)
 		}
 
 		if yesNo != "y" {
 			return cmd.ui.RenderInfo("Exiting....")
 		}
 
-		// If yes we can delete the destination
-		err = os.RemoveAll(cmd.options.Destination)
-		if err != nil {
-			return err
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			// If yes we can delete the destination
+			if err = os.RemoveAll(cmd.options.Destination); err != nil {
+				return fmt.Errorf("failed to clean destination directory: %w", err)
+			}
 		}
 	}
 
-	err := cmd.downloader.Get(cmd.options.Source, cmd.options.Destination)
-	if err != nil {
-		return err
+	// Download with context
+	if err := cmd.downloader.Get(cmd.options.Source, cmd.options.Destination); err != nil {
+		return fmt.Errorf("failed to download template: %w", err)
 	}
 
-	configBytes, err := os.ReadFile(filepath.Join(cmd.options.Destination, templates.TemplateConfigName))
+	config, err := cmd.processor.ProcessTemplate(cmd.options.Destination)
+	if err != nil {
+		return fmt.Errorf("failed to process template: %w", err)
+	}
 
-	// No need to continue if the file doesn't exist
-	// Since the repo has been downloaded we can exit
-	if errors.Is(err, os.ErrNotExist) {
+	if config == nil {
 		return cmd.ui.RenderInfo(fmt.Sprintf("No %s file found in %s, exiting....\n", templates.TemplateConfigName, cmd.options.Destination))
-	} else if err != nil {
-		return err
-	}
-
-	var config templates.ProjectTemplate
-	err = yaml.Unmarshal(configBytes, &config)
-	if err != nil {
-		return err
 	}
 
 	// Collect user input defined in the config
-	err = cmd.ui.RenderInputs(config.Inputs)
-	if err != nil {
-		return err
+	if err := cmd.ui.RenderInputs(config.Inputs); err != nil {
+		return fmt.Errorf("failed to collect inputs: %w", err)
 	}
 
-	// walk through all files in the destination dir
-	return filepath.WalkDir(cmd.options.Destination, func(path string, d fs.DirEntry, err error) error {
-		// a reason for WalkDir to walk a file that doesn't exist is if the file was renamed when reading
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-			// if path errored straight away return immediately
-		} else if err != nil {
-			return err
-		}
-
-		// check if filename was templated
-		tFilePath, err := cmd.renderer.RenderFile(config, path)
-		if err != nil {
-			return err
-		}
-
-		// if a directory we don't do anything after the name
-		if d.IsDir() {
-			return nil
-		}
-
-		// template file contents
-		return cmd.renderer.RenderFileContents(config, tFilePath)
-	})
+	// Process all files in the template
+	return cmd.processor.ApplyTemplate(*config, cmd.options.Destination)
 }
 
 func NewInitCommand(
@@ -104,9 +114,10 @@ func NewInitCommand(
 	options InitOptions,
 	ui view.UI,
 ) InitCommand {
+	processor := templates.NewTemplateProcessor(renderer)
 	return InitCommand{
+		processor:  processor,
 		downloader: downloader,
-		renderer:   renderer,
 		options:    options,
 		ui:         ui,
 	}
