@@ -1,8 +1,5 @@
 .PHONY: clean build release test lint deps setup_workspace $(RELEASE_OS)
 
-# Repository path
-REPO := /go/src/github.com/aaron-vaz/proj
-
 # Build directories
 BUILD_DIR := ${PWD}/build
 BINARY_DIR := ${BUILD_DIR}/bin
@@ -31,20 +28,20 @@ clean:
 	@go clean
 
 # Setup workspace
-setup_workspace:
-	@mkdir -p ${BUILD_DIR} ${BINARY_DIR}
+${BUILD_DIR}:
+	@mkdir -p ${BINARY_DIR}
 
 # Run tests with coverage
-test: setup_workspace
+test: ${BUILD_DIR}
 	@go test -v -race -coverprofile=${BUILD_DIR}/coverage.out ./...
 	@go tool cover -html=${BUILD_DIR}/coverage.out -o ${BUILD_DIR}/coverage.html
 
 # Build for current platform
-build: setup_workspace
+build: ${BUILD_DIR}
 	@go build ${GCFLAGS} ${ASMFLAGS} ${LDFLAGS} -o ${BUILD_DIR}/${BINARY_NAME} ./cmd/${BINARY_NAME}
 
 # Build for all platforms
-release: setup_workspace test $(RELEASE_OS)
+release: ${BUILD_DIR} test $(RELEASE_OS)
 
 $(RELEASE_OS):
 	@for arch in $(RELEASE_ARCH); do \
@@ -54,9 +51,9 @@ $(RELEASE_OS):
 	done
 
 # Run linting
-lint: setup_workspace
+lint: ${BUILD_DIR}
 	@if command -v golangci-lint > /dev/null; then \
-		golangci-lint run --out-format=checkstyle > ${BUILD_DIR}/checkstyle.xml; \
+		golangci-lint run; \
 	else \
 		echo "golangci-lint not installed. Please run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
 		exit 1; \
