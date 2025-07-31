@@ -5,7 +5,7 @@ BUILD_DIR := ${PWD}/build
 BINARY_DIR := ${BUILD_DIR}/bin
 
 # Binary name
-BINARY_NAME := proj
+BINARY_NAME := skelly
 
 # Version information
 VERSION := $(shell git describe --tags --always --dirty)
@@ -13,7 +13,7 @@ VERSION := $(shell git describe --tags --always --dirty)
 # Build flags
 GCFLAGS := -gcflags "all=-trimpath=${PWD}"
 ASMFLAGS := -asmflags "all=-trimpath=${PWD}"
-LDFLAGS := -ldflags "-X github.com/aaron-vaz/proj/internal/cli.version=${VERSION} -s -w"
+LDFLAGS := -ldflags "-X github.com/aaron-vaz/skelly/internal/cli.version=${VERSION} -s -w"
 
 # Release targets
 RELEASE_OS := linux darwin

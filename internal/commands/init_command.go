@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/aaron-vaz/proj/internal/download"
-	"github.com/aaron-vaz/proj/internal/templates"
-	"github.com/aaron-vaz/proj/internal/view"
+	"github.com/aaron-vaz/skelly/internal/download"
+	"github.com/aaron-vaz/skelly/internal/templates"
+	"github.com/aaron-vaz/skelly/internal/view"
 )
 
 type InitOptions struct {

@@ -1,16 +1,16 @@
-# proj
+# skelly
 
 <p align="center">
-  <b>New projects made easy.</b>
+  <b>The bare bones of your next project.</b>
 </p>
 
 <p align="center">
-  <a href="https://github.com/aaron-vaz/proj/releases/latest"><img src="https://img.shields.io/github/v/release/aaron-vaz/proj" alt="Latest Release"></a>
-  <a href="https://goreportcard.com/report/github.com/aaron-vaz/proj"><img src="https://goreportcard.com/badge/github.com/aaron-vaz/proj" alt="Go Report Card"></a>
+  <a href="https://github.com/aaron-vaz/skelly/releases/latest"><img src="https://img.shields.io/github/v/release/aaron-vaz/skelly" alt="Latest Release"></a>
+  <a href="https://goreportcard.com/report/github.com/aaron-vaz/skelly"><img src="https://goreportcard.com/badge/github.com/aaron-vaz/skelly" alt="Go Report Card"></a>
   <a href="/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
 </p>
 
-`proj` is a command-line tool designed to streamline the creation of new software projects. Stop manually copying boilerplate files or cloning and cleaning up old repositories. With `proj`, you can instantly scaffold a new project from any template, substituting variables to customize it on the fly.
+`skelly` is a command-line tool designed to streamline the creation of new software projects. Stop manually copying boilerplate files or cloning and cleaning up old repositories. With `skelly`, you can instantly scaffold a new project from any template, substituting variables to customize it on the fly.
 
 It leverages the power of [go-getter](https://github.com/hashicorp/go-getter) to fetch templates from virtually anywhere including GitHub, GitLab, Bitbucket, or even a simple zip file over HTTP. The simple templating system, powered by Go's native `text/template` engine, makes creating your own templates a breeze.
 
@@ -20,7 +20,7 @@ This project was born from two goals: a desire to learn how to build a productio
 
 I found that whenever I started a new project—whether in Go, Java, or Kotlin—I would spend a significant amount of time copying and pasting boilerplate to fit my preferred structure. I considered using an existing tool like [Cookiecutter](https://github.com/cookiecutter/cookiecutter), but ultimately decided to build something simple myself. This would not only solve my problem in a tailored way but also serve as a perfect learning exercise.
 
-`proj` is the result of that.
+`skelly` is the result of that.
 
 ## Features
 
@@ -30,7 +30,7 @@ I found that whenever I started a new project—whether in Go, Java, or Kotlin�
 
 ## Installation
 
-There are a couple of ways to install `proj`.
+There are a couple of ways to install `skelly`.
 
 ### From Release (Recommended)
 
@@ -41,7 +41,7 @@ Download the pre-compiled binary for your operating system from the **latest rel
 Ensure you have Go (1.24 or later) installed on your system.
 
 ```bash
-go install github.com/aaron-vaz/proj/cmd/proj@latest
+go install github.com/aaron-vaz/skelly/cmd/skelly@latest
 ```
 
 ## Usage
@@ -50,17 +50,17 @@ The primary command is `init`, which scaffolds a new project from a template int
 
 ```bash
 # Initialize a new project from a GitHub repository template
-proj init --src https://github.com/user/template --dst ./my-new-app
+skelly init --src https://github.com/user/template --dst ./my-new-app
 ```
 
 Other commands:
 ```bash
 # Show help
-proj help
-proj help init
+skelly help
+skelly help init
 
 # Show version
-proj version
+skelly version
 ```
 
 ## Development
@@ -71,8 +71,8 @@ proj version
 ### Building from source
 ```bash
 # Clone the repository
-git clone https://github.com/aaron-vaz/proj.git
-cd proj
+git clone https://github.com/aaron-vaz/skelly.git
+cd skelly
 
 # Install dependencies
 make deps

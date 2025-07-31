@@ -1,4 +1,4 @@
-module github.com/aaron-vaz/proj
+module github.com/aaron-vaz/skelly
 
 go 1.24
 

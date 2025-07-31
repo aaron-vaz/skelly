@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/aaron-vaz/proj/internal/cli"
-	"github.com/aaron-vaz/proj/internal/commands"
-	"github.com/aaron-vaz/proj/internal/download"
-	"github.com/aaron-vaz/proj/internal/templates"
-	"github.com/aaron-vaz/proj/internal/view"
+	"github.com/aaron-vaz/skelly/internal/cli"
+	"github.com/aaron-vaz/skelly/internal/commands"
+	"github.com/aaron-vaz/skelly/internal/download"
+	"github.com/aaron-vaz/skelly/internal/templates"
+	"github.com/aaron-vaz/skelly/internal/view"
 )
 
 type Proj struct {

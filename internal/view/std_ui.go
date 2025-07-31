@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aaron-vaz/proj/internal/templates"
+	"github.com/aaron-vaz/skelly/internal/templates"
 )
 
 type StdUI struct {
