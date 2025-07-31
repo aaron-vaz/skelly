@@ -20,7 +20,7 @@ type InitOptions struct {
 }
 
 type InitCommand struct {
-	processor  *templates.TemplateProcessor
+	processor  *templates.Processor
 	downloader download.Downloader
 	ui         view.UI
 	options    InitOptions
@@ -109,7 +109,7 @@ func (cmd InitCommand) Execute() error {
 }
 
 func NewInitCommand(
-	processor *templates.TemplateProcessor,
+	processor *templates.Processor,
 	downloader download.Downloader,
 	options InitOptions,
 	ui view.UI,

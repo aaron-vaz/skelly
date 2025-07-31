@@ -10,11 +10,11 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type TemplateProcessor struct {
+type Processor struct {
 	renderer *RendererService
 }
 
-func (p *TemplateProcessor) ProcessTemplate(destination string) (*ProjectTemplate, error) {
+func (p *Processor) ProcessTemplate(destination string) (*ProjectTemplate, error) {
 	configBytes, err := os.ReadFile(filepath.Join(destination, TemplateConfigName))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -31,7 +31,7 @@ func (p *TemplateProcessor) ProcessTemplate(destination string) (*ProjectTemplat
 	return &config, nil
 }
 
-func (p *TemplateProcessor) ApplyTemplate(config ProjectTemplate, destination string) error {
+func (p *Processor) ApplyTemplate(config ProjectTemplate, destination string) error {
 	return filepath.WalkDir(destination, func(path string, d fs.DirEntry, err error) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -52,8 +52,8 @@ func (p *TemplateProcessor) ApplyTemplate(config ProjectTemplate, destination st
 	})
 }
 
-func NewTemplateProcessor(renderer *RendererService) *TemplateProcessor {
-	return &TemplateProcessor{
+func NewTemplateProcessor(renderer *RendererService) *Processor {
+	return &Processor{
 		renderer: renderer,
 	}
 }

@@ -22,7 +22,7 @@ var version = "dev"
 
 type FlagCommandInvoker struct {
 	downloader download.Downloader
-	processor  *templates.TemplateProcessor
+	processor  *templates.Processor
 	ui         view.UI
 }
 
@@ -102,7 +102,7 @@ func (i *FlagCommandInvoker) showHelp(command string) {
 
 func NewFlagCommandInvoker(
 	downloader download.Downloader,
-	processor *templates.TemplateProcessor,
+	processor *templates.Processor,
 	ui view.UI,
 ) commands.Invoker {
 	return &FlagCommandInvoker{
