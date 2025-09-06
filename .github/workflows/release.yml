@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
 
 jobs:
   release:
@@ -27,5 +30,3 @@ jobs:
             build/bin/skelly_linux_arm64
             build/bin/skelly_darwin_amd64
             build/bin/skelly_darwin_arm64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
