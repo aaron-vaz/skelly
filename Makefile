@@ -50,9 +50,9 @@ release: ${BUILD_DIR} test $(RELEASE_OS)
 
 $(RELEASE_OS):
 	@for arch in $(RELEASE_ARCH); do \
-		echo "Building for $@/$arch..."; \
-		GOOS=$@ GOARCH=$arch go build ${GCFLAGS} ${ASMFLAGS} ${LDFLAGS} \
-			-o ${BINARY_DIR}/${BINARY_NAME}_$@_$arch ./cmd/${BINARY_NAME}; \
+		echo "Building for $@/$$arch..."; \
+		GOOS=$@ GOARCH=$$arch go build ${GCFLAGS} ${ASMFLAGS} ${LDFLAGS} \
+			-o ${BINARY_DIR}/${BINARY_NAME}_$@_$$arch ./cmd/${BINARY_NAME}; \
 	done
 
 # Run linting
@@ -70,3 +70,4 @@ deps:
 	@echo "Installing dependencies..."
 	@go mod download
 	@go mod tidy
+	
