@@ -70,4 +70,5 @@ deps:
 	@echo "Installing dependencies..."
 	@go mod download
 	@go mod tidy
+	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	
