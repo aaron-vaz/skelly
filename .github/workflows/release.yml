@@ -20,12 +20,10 @@ jobs:
         run: make release
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             build/bin/skelly_linux_amd64
             build/bin/skelly_linux_arm64
             build/bin/skelly_darwin_amd64
             build/bin/skelly_darwin_arm64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
