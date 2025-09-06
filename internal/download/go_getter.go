@@ -8,8 +8,8 @@ import (
 
 type GoGetterDownloader struct{}
 
-func (g *GoGetterDownloader) Get(source string, destination string) error {
-	_, err := getter.GetAny(context.TODO(), destination, source)
+func (g *GoGetterDownloader) Get(ctx context.Context, source string, destination string) error {
+	_, err := getter.GetAny(ctx, destination, source)
 	return err
 }
 

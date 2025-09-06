@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/aaron-vaz/skelly/internal/templates"
@@ -27,7 +28,15 @@ func (s *StdUI) RenderInputs(inputs map[string]templates.Input) error {
 		return err
 	}
 
-	for name, input := range inputs {
+	// Sort the keys to ensure a consistent order
+	keys := make([]string, 0, len(inputs))
+	for k := range inputs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, name := range keys {
+		input := inputs[name]
 		err := s.renderInputs(name, &input)
 		if err != nil {
 			return err
@@ -61,12 +70,12 @@ func (s *StdUI) RenderError(message string) error {
 func (s *StdUI) renderInputs(name string, input *templates.Input) error {
 	_, err := fmt.Fprintf(s.stdout, "%s: \n%s: [%s]\n", name, input.Description, input.Default)
 	if err != nil {
-		return fmt.Errorf("failed to write prompt: %w", err)
+		return fmt.Errorf("failed to write prompt for '%s': %w", name, err)
 	}
 
 	userInput, err := s.waitForUserInput()
 	if err != nil {
-		return fmt.Errorf("failed to read user input: %w", err)
+		return fmt.Errorf("failed to read user input for '%s': %w", name, err)
 	}
 
 	if userInput == "" {

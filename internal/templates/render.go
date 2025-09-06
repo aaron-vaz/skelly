@@ -17,22 +17,29 @@ type RendererService struct {
 }
 
 func (rs *RendererService) RenderFile(config ProjectTemplate, path string) (string, error) {
-	return rs.applicableRenderer(config).RenderFile(config, path)
+	r, err := rs.applicableRenderer(config)
+	if err != nil {
+		return "", err
+	}
+	return r.RenderFile(config, path)
 }
 
 func (rs *RendererService) RenderFileContents(config ProjectTemplate, path string) error {
-	return rs.applicableRenderer(config).RenderFileContents(config, path)
+	r, err := rs.applicableRenderer(config)
+	if err != nil {
+		return err
+	}
+	return r.RenderFileContents(config, path)
 }
 
-func (rs *RendererService) applicableRenderer(config ProjectTemplate) Renderer {
+func (rs *RendererService) applicableRenderer(config ProjectTemplate) (Renderer, error) {
 	for _, renderer := range rs.renderers {
 		if renderer.Supports(config) {
-			return renderer
+			return renderer, nil
 		}
 	}
 
-	// should never happen as a default renderer is always added
-	panic(fmt.Sprintf("No renderer found for project config, renderer = %s", config.Renderer))
+	return nil, fmt.Errorf("no renderer found for project config, renderer = %s", config.Renderer)
 }
 
 func NewRendererService() *RendererService {

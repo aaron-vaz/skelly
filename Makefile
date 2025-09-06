@@ -13,7 +13,7 @@ VERSION := $(shell git describe --tags --always --dirty)
 # Build flags
 GCFLAGS := -gcflags "all=-trimpath=${PWD}"
 ASMFLAGS := -asmflags "all=-trimpath=${PWD}"
-LDFLAGS := -ldflags "-X github.com/aaron-vaz/skelly/internal/cli.version=${VERSION} -s -w"
+LDFLAGS := -ldflags "-X github.com/aaron-vaz/skelly/internal/commands.version=${VERSION} -s -w"
 
 # Release targets
 RELEASE_OS := linux darwin
