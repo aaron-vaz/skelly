@@ -24,34 +24,40 @@ all: lint test build
 
 # Clean build artifacts
 clean:
+	@echo "Cleaning build artifacts..."
 	@rm -rf ${BUILD_DIR}
 	@go clean
 
 # Setup workspace
 ${BUILD_DIR}:
+	@echo "Setting up workspace..."
 	@mkdir -p ${BINARY_DIR}
 
 # Run tests with coverage
 test: ${BUILD_DIR}
+	@echo "Running tests..."
 	@go test -v -race -coverprofile=${BUILD_DIR}/coverage.out ./...
 	@go tool cover -html=${BUILD_DIR}/coverage.out -o ${BUILD_DIR}/coverage.html
 
 # Build for current platform
 build: ${BUILD_DIR}
+	@echo "Building binary..."
 	@go build ${GCFLAGS} ${ASMFLAGS} ${LDFLAGS} -o ${BUILD_DIR}/${BINARY_NAME} ./cmd/${BINARY_NAME}
 
 # Build for all platforms
 release: ${BUILD_DIR} test $(RELEASE_OS)
+	@echo "Building release artifacts..."
 
 $(RELEASE_OS):
 	@for arch in $(RELEASE_ARCH); do \
-		echo "Building for $@/$$arch..."; \
-		GOOS=$@ GOARCH=$$arch go build ${GCFLAGS} ${ASMFLAGS} ${LDFLAGS} \
-			-o ${BINARY_DIR}/${BINARY_NAME}_$@_$$arch ./cmd/${BINARY_NAME}; \
+		echo "Building for $@/$arch..."; \
+		GOOS=$@ GOARCH=$arch go build ${GCFLAGS} ${ASMFLAGS} ${LDFLAGS} \
+			-o ${BINARY_DIR}/${BINARY_NAME}_$@_$arch ./cmd/${BINARY_NAME}; \
 	done
 
 # Run linting
 lint: ${BUILD_DIR}
+	@echo "Running linter..."
 	@if command -v golangci-lint > /dev/null; then \
 		golangci-lint run; \
 	else \
@@ -61,5 +67,6 @@ lint: ${BUILD_DIR}
 
 # Install dependencies
 deps:
+	@echo "Installing dependencies..."
 	@go mod download
 	@go mod tidy
