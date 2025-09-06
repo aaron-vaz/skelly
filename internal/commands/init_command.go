@@ -34,8 +34,8 @@ func (c *InitCommand) Description() string {
 }
 
 func (c *InitCommand) Init(flags *flag.FlagSet) {
-	c.options.source = *flags.String("src", "", "URL to template that will be used to init the new project (required)")
-	c.options.destination = *flags.String("dst", ".", "Destination dir where the project will be initialised to (Defaults to current directory)")
+	flags.StringVar(&c.options.source, "src", "", "URL to template that will be used to init the new project (required)")
+	flags.StringVar(&c.options.destination, "dst", ".", "Destination dir where the project will be initialised to (Defaults to current directory)")
 }
 
 func (c *InitCommand) Run(args []string) error {
@@ -66,7 +66,7 @@ func (c *InitCommand) Run(args []string) error {
 	}
 
 	// Download with context
-	if err := c.downloader.Get(ctx, c.options.destination, c.options.source); err != nil {
+	if err := c.downloader.Get(ctx, c.options.source, c.options.destination); err != nil {
 		return fmt.Errorf("failed to download template: %w", err)
 	}
 
