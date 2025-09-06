@@ -13,7 +13,7 @@ func (r *StdRenderer) Supports(config ProjectTemplate) bool {
 }
 
 func (r *StdRenderer) RenderFile(config ProjectTemplate, path string) (string, error) {
-	tmpl, err := template.New("templated").Parse(path)
+	tmpl, err := template.New(path).Parse(path)
 	if err != nil {
 		return "", err
 	}
@@ -37,16 +37,30 @@ func (r *StdRenderer) RenderFile(config ProjectTemplate, path string) (string, e
 }
 
 func (r *StdRenderer) RenderFileContents(config ProjectTemplate, path string) error {
-	tmpl, err := template.ParseFiles(path)
+	// Get file info for permissions
+	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
 
-	tFile, err := os.Create(path)
+	// Read the original content
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 
-	defer tFile.Close()
-	return tmpl.Execute(tFile, config)
+	// Create a new template and parse the content
+	tmpl, err := template.New(path).Parse(string(content))
+	if err != nil {
+		return err
+	}
+
+	// Execute the template into a buffer
+	var rendered strings.Builder
+	if err := tmpl.Execute(&rendered, config); err != nil {
+		return err
+	}
+
+	// Write the rendered content back to the file
+	return os.WriteFile(path, []byte(rendered.String()), info.Mode())
 }
