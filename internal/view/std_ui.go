@@ -37,7 +37,7 @@ func (s *StdUI) RenderInputs(inputs map[string]templates.Input) error {
 
 	for _, name := range keys {
 		input := inputs[name]
-		err := s.renderInputs(name, &input)
+		err := s.renderInput(name, &input)
 		if err != nil {
 			return err
 		}
@@ -67,8 +67,15 @@ func (s *StdUI) RenderError(message string) error {
 	return err
 }
 
-func (s *StdUI) renderInputs(name string, input *templates.Input) error {
-	_, err := fmt.Fprintf(s.stdout, "%s: \n%s: [%s]\n", name, input.Description, input.Default)
+func (s *StdUI) renderInput(name string, input *templates.Input) error {
+	required := false
+	defaultValue := input.Default
+	if defaultValue == "" || defaultValue == nil {
+		required = true
+		defaultValue = "*" // required
+	}
+
+	_, err := fmt.Fprintf(s.stdout, "%s: \n%s: [%s]\n", name, input.Description, defaultValue)
 	if err != nil {
 		return fmt.Errorf("failed to write prompt for '%s': %w", name, err)
 	}
@@ -79,6 +86,11 @@ func (s *StdUI) renderInputs(name string, input *templates.Input) error {
 	}
 
 	if userInput == "" {
+		if required {
+			_ = s.RenderError(fmt.Sprintf("This input '%s' is required. Please provide a value.\n", name))
+			return s.renderInput(name, input)
+		}
+
 		input.Value = input.Default
 	} else {
 		input.Value = userInput
