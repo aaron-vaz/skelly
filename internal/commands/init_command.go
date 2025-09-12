@@ -70,7 +70,7 @@ func (c *InitCommand) Run(args []string) error {
 		return fmt.Errorf("failed to download template: %w", err)
 	}
 
-	config, err := c.processor.ProcessTemplate(c.options.destination)
+	config, err := c.processor.CreateTemplate(c.options.destination)
 	if err != nil {
 		return fmt.Errorf("failed to process template: %w", err)
 	}

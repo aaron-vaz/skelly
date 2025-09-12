@@ -12,15 +12,16 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-const (
+var (
 	pathSeparator = string(os.PathSeparator)
+	dirsToSkip    = []string{".git"}
 )
 
 type Processor struct {
 	renderer *RendererService
 }
 
-func (p *Processor) ProcessTemplate(destination string) (*ProjectTemplate, error) {
+func (p *Processor) CreateTemplate(destination string) (*ProjectTemplate, error) {
 	configBytes, err := os.ReadFile(filepath.Join(destination, TemplateConfigName))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -38,6 +39,17 @@ func (p *Processor) ProcessTemplate(destination string) (*ProjectTemplate, error
 }
 
 func (p *Processor) ApplyTemplate(config ProjectTemplate, destination string) error {
+	// Skip certain paths
+	// easier to do this by deleting them before processing
+	for _, skip := range dirsToSkip {
+		skipPath := filepath.Join(destination, skip)
+		if _, err := os.Stat(skipPath); err == nil {
+			if err := os.RemoveAll(skipPath); err != nil {
+				return fmt.Errorf("error removing path %s: %w", skipPath, err)
+			}
+		}
+	}
+
 	// Phase 1: Render file contents in-place
 	err := filepath.WalkDir(destination, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -56,6 +68,7 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, destination string) er
 
 		return p.renderer.RenderFileContents(config, path)
 	})
+
 	if err != nil {
 		return fmt.Errorf("error rendering file contents: %w", err)
 	}
@@ -66,9 +79,11 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, destination string) er
 		if err != nil {
 			return err
 		}
+
 		pathsToRename = append(pathsToRename, path)
 		return nil
 	})
+
 	if err != nil {
 		return err
 	}
