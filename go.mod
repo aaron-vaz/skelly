@@ -1,9 +1,9 @@
 module github.com/aaron-vaz/skelly
 
-go 1.24
+go 1.26.8
 
 require (
-	github.com/hashicorp/go-getter/v2 v2.2.3
+	github.com/hashicorp/go-getter/v2 v2.2.4
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -21,5 +21,6 @@ require (
 	github.com/mitchellh/go-testing-interface v1.14.1 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/ulikunitz/xz v0.5.14 // indirect
+	golang.org/x/sys v0.35.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
