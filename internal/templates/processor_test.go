@@ -188,6 +188,11 @@ func TestProcessor_ApplyTemplate_Scenarios(t *testing.T) {
 			want:  map[string]string{".github/workflows/ci.yml": "sha: ${{ github.sha }}", "x.tpl": "{{.Missing}}", "y.txt": "World"},
 		},
 		{
+			name:  "raw paths keep their templated-looking names",
+			files: map[string]string{".github/{{cookiecutter.project}}/x.txt": "{{ y }}"},
+			want:  map[string]string{".github/{{cookiecutter.project}}/x.txt": "{{ y }}"},
+		},
+		{
 			name:    "unrendered file with foreign {{ }} syntax suggests raw",
 			files:   map[string]string{"ci.yml": "sha: ${{ github.sha }}"},
 			wantErr: "list the file under 'raw'",
@@ -302,5 +307,46 @@ func TestMatchesAny(t *testing.T) {
 				t.Errorf("matchesAny(%q, %q) = %v, want %v", tt.pattern, tt.rel, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestProcessor_CreateTemplate_SymlinkedConfigOutsideTemplate(t *testing.T) {
+	// Given a config that is a symlink to a file outside the template
+	dir := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret")
+	_ = os.WriteFile(outside, []byte("name: secret"), 0644)
+	if err := os.Symlink(outside, filepath.Join(dir, TemplateConfigName)); err != nil {
+		t.Fatal(err)
+	}
+
+	// When
+	_, err := NewTemplateProcessor(NewRendererService()).CreateTemplate(dir)
+
+	// Then the link is not followed
+	if err == nil {
+		t.Error("CreateTemplate() error = nil, want refusal to read outside the template")
+	}
+}
+
+func TestProcessor_RemoveTemplateMetadata(t *testing.T) {
+	// Given
+	dir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(dir, ".git", "objects"), 0755)
+	_ = os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
+
+	// When
+	err := NewTemplateProcessor(NewRendererService()).RemoveTemplateMetadata(dir)
+
+	// Then
+	if err != nil {
+		t.Fatalf("RemoveTemplateMetadata() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git")); !os.IsNotExist(err) {
+		t.Errorf("Expected .git to be removed, stat err = %v", err)
+	}
+
+	// And
+	if _, err := os.Stat(filepath.Join(dir, "main.go")); err != nil {
+		t.Errorf("Expected other files to be kept: %v", err)
 	}
 }

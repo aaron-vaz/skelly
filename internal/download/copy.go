@@ -46,9 +46,11 @@ func CopyDir(ctx context.Context, source string, destination string) error {
 			}
 			return os.Symlink(link, target)
 		case d.IsDir():
-			return os.MkdirAll(target, info.Mode().Perm())
+			// Owner write access is added so a template from a read-only location
+			// can still be rendered in place and cleaned up afterwards
+			return os.MkdirAll(target, info.Mode().Perm()|0o700)
 		case d.Type().IsRegular():
-			return copyFile(path, target, info.Mode().Perm())
+			return copyFile(path, target, info.Mode().Perm()|0o200)
 		default:
 			// Sockets, devices and pipes have no place in a project template
 			return nil

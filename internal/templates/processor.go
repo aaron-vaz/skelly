@@ -29,7 +29,13 @@ type Processor struct {
 // directory, unmarshaling it into a ProjectTemplate struct. It returns nil if the
 // template has no configuration file.
 func (p *Processor) CreateTemplate(dir string) (*ProjectTemplate, error) {
-	configBytes, err := os.ReadFile(filepath.Join(dir, TemplateConfigName))
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+
+	configBytes, err := root.ReadFile(TemplateConfigName)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -60,10 +66,8 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, dir string) error {
 	}
 	defer func() { _ = root.Close() }()
 
-	for _, skip := range dirsToSkip {
-		if err := root.RemoveAll(skip); err != nil {
-			return fmt.Errorf("error removing path %s: %w", skip, err)
-		}
+	if err := removeSkippedDirs(root); err != nil {
+		return err
 	}
 
 	// Phase 1: Render file contents in place
@@ -89,7 +93,7 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, dir string) error {
 		if err != nil {
 			return err
 		}
-		if rel != "." && rel != TemplateConfigName {
+		if rel != "." && rel != TemplateConfigName && !matchesAny(config.Raw, rel) {
 			pathsToRename = append(pathsToRename, rel)
 		}
 		return nil
@@ -170,6 +174,28 @@ func (p *Processor) renameEntry(root *os.Root, config ProjectTemplate, rel strin
 	}
 
 	return root.Rename(rel, target)
+}
+
+// RemoveTemplateMetadata deletes the parts of a template that must never end
+// up in a generated project, such as its .git directory. ApplyTemplate already
+// does this, so it is only needed for templates that are not rendered.
+func (p *Processor) RemoveTemplateMetadata(dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+
+	return removeSkippedDirs(root)
+}
+
+func removeSkippedDirs(root *os.Root) error {
+	for _, skip := range dirsToSkip {
+		if err := root.RemoveAll(skip); err != nil {
+			return fmt.Errorf("error removing path %s: %w", skip, err)
+		}
+	}
+	return nil
 }
 
 // matchesAny reports whether rel, its base name, or any of its parent

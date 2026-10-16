@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/aaron-vaz/skelly/internal/download"
@@ -69,7 +70,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 		return c.ui.RenderInfo("Exiting....")
 	}
 
-	workDir, err := os.MkdirTemp("", "skelly-*")
+	workDir, err := makeWorkDir(dest)
 	if err != nil {
 		return fmt.Errorf("failed to create working directory: %w", err)
 	}
@@ -90,6 +91,9 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 	// Without a config there is nothing to render, so the files are used as-is
 	if config == nil {
 		_ = c.ui.RenderInfo(fmt.Sprintf("No %s file found in template, copying files without rendering", templates.TemplateConfigName))
+		if err := c.processor.RemoveTemplateMetadata(templateDir); err != nil {
+			return fmt.Errorf("failed to process template: %w", err)
+		}
 	} else {
 		if err := c.ui.RenderInputs(ctx, config.Inputs); err != nil {
 			return fmt.Errorf("failed to collect inputs: %w", err)
@@ -113,7 +117,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 		}
 	}
 
-	if err := download.CopyDir(ctx, templateDir, dest); err != nil {
+	if err := moveContents(ctx, templateDir, dest); err != nil {
 		return fmt.Errorf("failed to write project to %s: %w", dest, err)
 	}
 
@@ -204,10 +208,17 @@ func checkSafeToClear(dest string) error {
 	if err != nil {
 		return err
 	}
+	// Resolve links so e.g. a symlink to $HOME cannot slip past the comparison
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
 
 	protected := []string{filepath.VolumeName(abs) + string(filepath.Separator)}
 	if home, err := os.UserHomeDir(); err == nil {
 		protected = append(protected, filepath.Clean(home))
+		if resolved, err := filepath.EvalSymlinks(home); err == nil {
+			protected = append(protected, resolved)
+		}
 	}
 
 	for _, p := range protected {
@@ -228,6 +239,42 @@ func clearDir(dir string) error {
 
 	for _, e := range entries {
 		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// makeWorkDir creates the working directory next to dest when possible, so the
+// finished project can be renamed into place instead of copied: a rename cannot
+// fail halfway through a file, which keeps the window between clearing dest
+// and filling it as short as possible.
+func makeWorkDir(dest string) (string, error) {
+	if abs, err := filepath.Abs(dest); err == nil {
+		if dir, err := os.MkdirTemp(filepath.Dir(abs), ".skelly-*"); err == nil {
+			return dir, nil
+		}
+	}
+	return os.MkdirTemp("", "skelly-*")
+}
+
+// moveContents moves every entry of src into dest, falling back to copying
+// whatever is left once a rename crosses filesystems.
+func moveContents(ctx context.Context, src string, dest string) error {
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		err := os.Rename(filepath.Join(src, e.Name()), filepath.Join(dest, e.Name()))
+		if errors.Is(err, syscall.EXDEV) {
+			return download.CopyDir(ctx, src, dest)
+		}
+		if err != nil {
 			return err
 		}
 	}

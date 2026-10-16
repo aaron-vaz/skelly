@@ -185,28 +185,52 @@ func TestInitCommand_Run(t *testing.T) {
 }
 
 func TestInitCommand_Run_RefusesToOverwriteHome(t *testing.T) {
-	// Given
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	_ = os.WriteFile(filepath.Join(home, "precious.txt"), []byte("data"), 0644)
-
-	ui := &mockUIInit{returns: mockUIReturns{questionAnswer: "y"}}
-	cmd := NewInitCommand(templates.NewTemplateProcessor(templates.NewRendererService()), &mockDownloader{}, ui)
-	flags := flag.NewFlagSet("init", flag.ContinueOnError)
-	cmd.Init(flags)
-	_ = flags.Parse([]string{"-src", "http://example.com/t", "-dst", home})
-
-	// When
-	err := cmd.Run(context.Background(), nil)
-
-	// Then
-	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
-		t.Errorf("Run() error = %v, want refusal", err)
+	tests := []struct {
+		name string
+		dest func(t *testing.T, home string) string
+	}{
+		{
+			name: "home directory",
+			dest: func(t *testing.T, home string) string { return home },
+		},
+		{
+			name: "symlink to home directory",
+			dest: func(t *testing.T, home string) string {
+				link := filepath.Join(t.TempDir(), "home-link")
+				if err := os.Symlink(home, link); err != nil {
+					t.Fatal(err)
+				}
+				return link
+			},
+		},
 	}
 
-	// And
-	if _, err := os.Stat(filepath.Join(home, "precious.txt")); err != nil {
-		t.Errorf("Expected home directory contents to be untouched: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			_ = os.WriteFile(filepath.Join(home, "precious.txt"), []byte("data"), 0644)
+
+			ui := &mockUIInit{returns: mockUIReturns{questionAnswer: "y"}}
+			cmd := NewInitCommand(templates.NewTemplateProcessor(templates.NewRendererService()), &mockDownloader{}, ui)
+			flags := flag.NewFlagSet("init", flag.ContinueOnError)
+			cmd.Init(flags)
+			_ = flags.Parse([]string{"-src", "http://example.com/t", "-dst", tt.dest(t, home)})
+
+			// When
+			err := cmd.Run(context.Background(), nil)
+
+			// Then
+			if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+				t.Errorf("Run() error = %v, want refusal", err)
+			}
+
+			// And
+			if _, err := os.Stat(filepath.Join(home, "precious.txt")); err != nil {
+				t.Errorf("Expected home directory contents to be untouched: %v", err)
+			}
+		})
 	}
 }
 

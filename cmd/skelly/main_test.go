@@ -400,7 +400,39 @@ func TestIntegration_Init_Interrupted(t *testing.T) {
 	}
 
 	// And the working directory was cleaned up
-	if entries, _ := os.ReadDir(tmpDir); len(entries) != 0 {
-		t.Errorf("Expected working directory to be removed, found %v", entries)
+	for _, dir := range []string{tmpDir, filepath.Dir(destDir)} {
+		if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+			t.Errorf("Expected working directory to be removed from %s, found %v", dir, entries)
+		}
+	}
+}
+
+func TestIntegration_Init_NoConfigSkipsGitDir(t *testing.T) {
+	// Given a plain template with no config but with a .git directory
+	srcDir := writeTemplate(t, map[string]string{
+		".git/HEAD": "ref: refs/heads/main",
+		"main.go":   "package main",
+	})
+	destDir := filepath.Join(t.TempDir(), "dest")
+
+	// When
+	out, err := exec.Command("./"+binName, "init", "-src", srcDir, "-dst", destDir).CombinedOutput()
+
+	// Then
+	if err != nil {
+		t.Fatalf("Expected init to succeed, got %v: %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(destDir, "main.go")); err != nil {
+		t.Errorf("Expected template files to be copied: %v", err)
+	}
+
+	// And
+	if _, err := os.Stat(filepath.Join(destDir, ".git")); !os.IsNotExist(err) {
+		t.Errorf("Expected .git not to be copied, stat err = %v", err)
+	}
+
+	// And no working directory is left next to the destination
+	if entries, _ := os.ReadDir(filepath.Dir(destDir)); len(entries) != 1 {
+		t.Errorf("Expected only the destination next to it, found %v", entries)
 	}
 }

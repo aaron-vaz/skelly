@@ -72,7 +72,7 @@ inputs:
     default: my-app
   author:
     description: Author's name   # no default, so the input is required
-# Files whose contents are copied without rendering, e.g. files that use {{ }} themselves.
+# Files copied without rendering their names or contents, e.g. files that use {{ }} themselves.
 # A pattern can match a file's path, its name, or any parent directory.
 raw:
   - .github
