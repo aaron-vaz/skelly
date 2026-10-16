@@ -61,7 +61,7 @@ lint: ${BUILD_DIR}
 	@if command -v golangci-lint > /dev/null; then \
 		golangci-lint run; \
 	else \
-		echo "golangci-lint not installed. Please run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		echo "golangci-lint not installed. Please run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; \
 		exit 1; \
 	fi
 
@@ -70,4 +70,4 @@ deps:
 	@echo "Installing dependencies..."
 	@go mod download
 	@go mod tidy
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest

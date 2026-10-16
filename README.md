@@ -38,7 +38,7 @@ Download the pre-compiled binary for your operating system from the **latest rel
 
 ### From Source
 
-Ensure you have Go (1.24 or later) installed on your system.
+Ensure you have Go (1.26 or later) installed on your system.
 
 ```bash
 go install github.com/aaron-vaz/skelly/cmd/skelly@latest
@@ -51,7 +51,45 @@ The primary command is `init`, which scaffolds a new project from a template int
 ```bash
 # Initialize a new project from a GitHub repository template
 skelly init --src https://github.com/user/template --dst ./my-new-app
+
+# The source can also be given as a plain argument
+skelly init github.com/user/template -dst ./my-new-app
 ```
+
+The template is downloaded and rendered in a temporary directory first, so a failed download or render never touches the destination. If the destination already contains files, `skelly` asks before replacing them.
+
+### Writing templates
+
+A template is any directory (or repository) containing a `.skelly.yml` file. File contents **and** file/directory names are rendered with Go's [`text/template`](https://pkg.go.dev/text/template):
+
+```yaml
+# .skelly.yml
+name: my-template
+description: A Go service skeleton
+inputs:
+  project_name:
+    description: Name of the project
+    default: my-app
+  author:
+    description: Author's name   # no default, so the input is required
+# Files copied without rendering their names or contents, e.g. files that use {{ }} themselves.
+# A pattern can match a file's path, its name, or any parent directory.
+raw:
+  - .github
+  - "*.tpl"
+```
+
+```text
+{{.Inputs.project_name.Value}}/main.go   ->  my-app/main.go
+// Author: {{.Inputs.author.Value}}       ->  // Author: Jane Doe
+```
+
+Notes:
+
+*   Referencing an input that is not defined is an error, rather than silently rendering `<no value>`.
+*   `.skelly.yml` is validated up front: input names must not be blank, defaults must be a string, number or boolean, and `raw` patterns must be valid globs.
+*   A rendered name may contain `/` to create nested directories (handy for Java packages), but can never point outside the project.
+*   Binary files and symlinks are copied without rendering; the template's `.git` directory and `.skelly.yml` are not copied at all.
 
 Other commands:
 ```bash

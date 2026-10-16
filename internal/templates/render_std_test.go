@@ -1,8 +1,6 @@
 package templates
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -16,93 +14,49 @@ func TestStdRenderer_Supports(t *testing.T) {
 	}
 }
 
-func TestStdRenderer_RenderFile(t *testing.T) {
-	r := &StdRenderer{}
-	cfg := ProjectTemplate{Name: "Foo"}
+func TestStdRenderer_Render(t *testing.T) {
+	cfg := ProjectTemplate{
+		Name:   "Foo",
+		Inputs: map[string]Input{"author": {Value: "Jane"}},
+	}
 
-	t.Run("valid template rename", func(t *testing.T) {
-		// Given
-		dest := t.TempDir()
-		tmplPath := filepath.Join(dest, "{{.Name}}_test.txt")
-		_ = os.WriteFile(tmplPath, []byte(""), 0644)
+	tests := []struct {
+		name    string
+		text    string
+		want    string
+		wantErr bool
+	}{
+		{name: "plain text is unchanged", text: "hello", want: "hello"},
+		{name: "struct field", text: "Name is {{.Name}}", want: "Name is Foo"},
+		{name: "input value", text: "by {{.Inputs.author.Value}}", want: "by Jane"},
+		{name: "invalid syntax", text: "Name is {{.", wantErr: true},
+		{name: "missing input key is an error", text: "{{.Inputs.nope}}", wantErr: true},
+		{name: "unknown field is an error", text: "{{.NonExistentField}}", wantErr: true},
+	}
 
-		// When
-		newPath, err := r.RenderFile(cfg, tmplPath)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			r := &StdRenderer{}
 
-		// Then
-		if err != nil {
-			t.Fatalf("RenderFile failed: %v", err)
-		}
+			// When
+			got, err := r.Render(cfg, "test.txt", tt.text)
 
-		// And
-		expectedPath := filepath.Join(dest, "Foo_test.txt")
-		if newPath != expectedPath {
-			t.Errorf("Expected renamed path %s, got %s", expectedPath, newPath)
-		}
+			// Then
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Render() = %q, want error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
 
-		// And
-		if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
-			t.Errorf("Renamed file does not exist")
-		}
-	})
-
-	t.Run("invalid template syntax", func(t *testing.T) {
-		// Given
-		dest := t.TempDir()
-		tmplPath := filepath.Join(dest, "{{.Name_test.txt") // unclosed brace
-		_ = os.WriteFile(tmplPath, []byte(""), 0644)
-
-		// When
-		_, err := r.RenderFile(cfg, tmplPath)
-
-		// Then
-		if err == nil {
-			t.Errorf("Expected error for invalid template")
-		}
-	})
-}
-
-func TestStdRenderer_RenderFileContents(t *testing.T) {
-	r := &StdRenderer{}
-	cfg := ProjectTemplate{Name: "Bar"}
-
-	t.Run("valid content rendering", func(t *testing.T) {
-		// Given
-		dest := t.TempDir()
-		filePath := filepath.Join(dest, "test.txt")
-		_ = os.WriteFile(filePath, []byte("Name is {{.Name}}"), 0644)
-
-		// When
-		err := r.RenderFileContents(cfg, filePath)
-
-		// Then
-		if err != nil {
-			t.Fatalf("RenderFileContents failed: %v", err)
-		}
-
-		// And
-		content, _ := os.ReadFile(filePath)
-		if string(content) != "Name is Bar" {
-			t.Errorf("Expected rendered content 'Name is Bar', got '%s'", string(content))
-		}
-	})
-
-	t.Run("invalid content rendering", func(t *testing.T) {
-		// Given
-		dest := t.TempDir()
-		filePath := filepath.Join(dest, "test.txt")
-		_ = os.WriteFile(filePath, []byte("Name is {{.NonExistentField}}"), 0644)
-
-		// When
-		// text/template might not error on missing fields unless strict mode, actually it does if field doesn't exist on struct.
-		// Wait, ProjectTemplate has no NonExistentField, text/template will emit <no value> or error out.
-		// Let's test with a syntax error instead to guarantee failure
-		_ = os.WriteFile(filePath, []byte("Name is {{."), 0644)
-		err := r.RenderFileContents(cfg, filePath)
-
-		// Then
-		if err == nil {
-			t.Errorf("Expected error for invalid template syntax")
-		}
-	})
+			// And
+			if got != tt.want {
+				t.Errorf("Render() = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }

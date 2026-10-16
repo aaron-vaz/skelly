@@ -6,10 +6,8 @@ import "fmt"
 type Renderer interface {
 	// Supports checks if this renderer can handle the given project template configuration
 	Supports(config ProjectTemplate) bool
-	// RenderFile processes a template file at the given path and returns the rendered content
-	RenderFile(config ProjectTemplate, path string) (string, error)
-	// RenderFileContents processes and writes the template contents to the destination
-	RenderFileContents(config ProjectTemplate, path string) error
+	// Render executes text as a template identified by name and returns the result
+	Render(config ProjectTemplate, name string, text string) (string, error)
 }
 
 // RendererService abstracts available individual renderers and determines
@@ -18,22 +16,13 @@ type RendererService struct {
 	renderers []Renderer
 }
 
-// RenderFile delegates path templating orchestration to the best compatible Renderer instance.
-func (rs *RendererService) RenderFile(config ProjectTemplate, path string) (string, error) {
+// Render delegates to the first Renderer that supports the given config.
+func (rs *RendererService) Render(config ProjectTemplate, name string, text string) (string, error) {
 	r, err := rs.applicableRenderer(config)
 	if err != nil {
 		return "", err
 	}
-	return r.RenderFile(config, path)
-}
-
-// RenderFileContents leverages the matching compatible Renderer to process the file body.
-func (rs *RendererService) RenderFileContents(config ProjectTemplate, path string) error {
-	r, err := rs.applicableRenderer(config)
-	if err != nil {
-		return err
-	}
-	return r.RenderFileContents(config, path)
+	return r.Render(config, name, text)
 }
 
 func (rs *RendererService) applicableRenderer(config ProjectTemplate) (Renderer, error) {

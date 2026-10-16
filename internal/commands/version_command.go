@@ -1,13 +1,14 @@
 package commands
 
 import (
+	"context"
 	"flag"
 	"fmt"
 
 	"github.com/aaron-vaz/skelly/internal/view"
 )
 
-// Version can be injected at build time using -ldflags "-X github.com/aaron-vaz/skelly/internal/cli.version=x.y.z"
+// Version can be injected at build time using -ldflags "-X github.com/aaron-vaz/skelly/internal/commands.version=x.y.z"
 var version = "dev"
 
 // VersionCommand outputs the current build version of skelly.
@@ -20,18 +21,20 @@ func (c *VersionCommand) Name() string {
 	return "version"
 }
 
+// Description returns a short summary shown in the help output.
 func (c *VersionCommand) Description() string {
 	return "Show skelly version"
 }
 
+// Init is a no-op as the version command has no flags.
 func (c *VersionCommand) Init(flags *flag.FlagSet) {}
 
 // Run displays the injected skelly application version string to the user UI.
-func (c *VersionCommand) Run(args []string) error {
+func (c *VersionCommand) Run(ctx context.Context, args []string) error {
 	return c.ui.RenderInfo(fmt.Sprintf("skelly version %s", version))
 }
 
 // NewVersionCommand initializes and returns the version logger instance.
-func NewVersionCommand(ui view.UI) Command[*flag.FlagSet] {
+func NewVersionCommand(ui view.UI) Command {
 	return &VersionCommand{ui: ui}
 }

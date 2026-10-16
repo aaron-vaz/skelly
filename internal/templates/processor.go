@@ -1,21 +1,23 @@
 package templates
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
-var (
-	pathSeparator = string(os.PathSeparator)
-	dirsToSkip    = []string{".git"}
-)
+// binarySniffLen mirrors git's heuristic: a NUL byte in the first 8000 bytes means binary.
+const binarySniffLen = 8000
+
+var dirsToSkip = []string{".git"}
 
 // Processor oversees the orchestration of template parsing, extracting configs,
 // and invoking renderers against template directories.
@@ -24,9 +26,16 @@ type Processor struct {
 }
 
 // CreateTemplate reads the local configuration file located in the fetched template
-// destination, unmarshaling it into a ProjectTemplate struct.
-func (p *Processor) CreateTemplate(destination string) (*ProjectTemplate, error) {
-	configBytes, err := os.ReadFile(filepath.Join(destination, TemplateConfigName))
+// directory, unmarshaling it into a ProjectTemplate struct. It returns nil if the
+// template has no configuration file.
+func (p *Processor) CreateTemplate(dir string) (*ProjectTemplate, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+
+	configBytes, err := root.ReadFile(TemplateConfigName)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -36,85 +45,173 @@ func (p *Processor) CreateTemplate(destination string) (*ProjectTemplate, error)
 
 	var config ProjectTemplate
 	if err := yaml.Unmarshal(configBytes, &config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid %s: %w", TemplateConfigName, err)
+	}
+
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", TemplateConfigName, err)
 	}
 
 	return &config, nil
 }
 
-// ApplyTemplate traverses the downloaded template project, executing two phases:
-// executing file contents as text templates, and renaming files dynamically.
-func (p *Processor) ApplyTemplate(config ProjectTemplate, destination string) error {
-	// Skip certain paths
-	// easier to do this by deleting them before processing
-	for _, skip := range dirsToSkip {
-		skipPath := filepath.Join(destination, skip)
-		if _, err := os.Stat(skipPath); err == nil {
-			if err := os.RemoveAll(skipPath); err != nil {
-				return fmt.Errorf("error removing path %s: %w", skipPath, err)
-			}
-		}
+// ApplyTemplate renders the template in dir in place, in two phases: first the
+// contents of every file, then the names of files and directories. All file
+// access goes through an os.Root, so neither a symlink nor a rendered name can
+// make it read or write outside dir.
+func (p *Processor) ApplyTemplate(config ProjectTemplate, dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+
+	if err := removeSkippedDirs(root); err != nil {
+		return err
 	}
 
-	// Phase 1: Render file contents in-place
-	err := filepath.WalkDir(destination, func(path string, d fs.DirEntry, err error) error {
+	// Phase 1: Render file contents in place
+	err = fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Skip directories (and symlinks to directories), That will be handled in phase 2
-		stat, statErr := os.Stat(path)
-		if statErr == nil && stat.IsDir() {
+		// Directories are handled in phase 2, and symlinks are never written through
+		if !d.Type().IsRegular() || rel == TemplateConfigName || matchesAny(config.Raw, rel) {
 			return nil
 		}
 
-		// Skip the template config file itself
-		if filepath.Base(path) == TemplateConfigName {
-			return nil
-		}
-
-		return p.renderer.RenderFileContents(config, path)
+		return p.renderContents(root, config, rel)
 	})
-
 	if err != nil {
 		return fmt.Errorf("error rendering file contents: %w", err)
 	}
 
 	// Phase 2: Rename files and directories from the bottom up
-	pathsToRename := make([]string, 0)
-	err = filepath.WalkDir(destination, func(path string, d fs.DirEntry, err error) error {
+	var pathsToRename []string
+	err = fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-
-		pathsToRename = append(pathsToRename, path)
+		if rel != "." && rel != TemplateConfigName && !matchesAny(config.Raw, rel) {
+			pathsToRename = append(pathsToRename, rel)
+		}
 		return nil
 	})
-
 	if err != nil {
 		return err
 	}
 
-	// Sort paths by depth, deepest first, to rename files before their parent directories
-	sort.Slice(pathsToRename, func(i, j int) bool {
-		return strings.Count(pathsToRename[i], pathSeparator) > strings.Count(pathsToRename[j], pathSeparator)
+	// Deepest first, so a child is renamed while its parent still has its original name
+	slices.SortStableFunc(pathsToRename, func(a, b string) int {
+		return strings.Count(b, "/") - strings.Count(a, "/")
 	})
 
-	for _, path := range pathsToRename {
-		// Skip the template config file itself
-		if filepath.Base(path) == TemplateConfigName {
-			continue
-		}
-		if _, err := p.renderer.RenderFile(config, path); err != nil {
-			// It's possible the file was already moved as part of a parent directory rename, so ignore "not exist" errors
-			if !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("error renaming path %s: %w", path, err)
-			}
+	for _, rel := range pathsToRename {
+		if err := p.renameEntry(root, config, rel); err != nil {
+			return fmt.Errorf("error renaming path %s: %w", rel, err)
 		}
 	}
 
 	// Finally, delete the template config file
-	return os.Remove(filepath.Join(destination, TemplateConfigName))
+	if err := root.Remove(TemplateConfigName); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func (p *Processor) renderContents(root *os.Root, config ProjectTemplate, rel string) error {
+	content, err := root.ReadFile(rel)
+	if err != nil {
+		return err
+	}
+
+	if bytes.IndexByte(content[:min(len(content), binarySniffLen)], 0) >= 0 {
+		return nil
+	}
+
+	rendered, err := p.renderer.Render(config, rel, string(content))
+	if err != nil {
+		return fmt.Errorf("%w (list the file under 'raw' in %s to copy it without rendering)", err, TemplateConfigName)
+	}
+
+	info, err := root.Lstat(rel)
+	if err != nil {
+		return err
+	}
+
+	return root.WriteFile(rel, []byte(rendered), info.Mode().Perm())
+}
+
+// renameEntry renders only the final element of rel, so the parent directories,
+// which are renamed later, are still found under their original names.
+func (p *Processor) renameEntry(root *os.Root, config ProjectTemplate, rel string) error {
+	parent, name := path.Split(rel)
+
+	rendered, err := p.renderer.Render(config, rel, name)
+	if err != nil {
+		return err
+	}
+	if rendered == name {
+		return nil
+	}
+
+	// A rendered name may add subdirectories (e.g. a Java package "com/example"),
+	// but must stay inside its parent directory
+	if !filepath.IsLocal(rendered) {
+		return fmt.Errorf("rendered name %q is empty or points outside its directory", rendered)
+	}
+
+	target := path.Join(parent, rendered)
+	if _, err := root.Lstat(target); err == nil {
+		return fmt.Errorf("rendered path %s already exists", target)
+	}
+
+	if targetDir := path.Dir(target); targetDir != "." {
+		if err := root.MkdirAll(targetDir, 0o755); err != nil {
+			return err
+		}
+	}
+
+	return root.Rename(rel, target)
+}
+
+// RemoveTemplateMetadata deletes the parts of a template that must never end
+// up in a generated project, such as its .git directory. ApplyTemplate already
+// does this, so it is only needed for templates that are not rendered.
+func (p *Processor) RemoveTemplateMetadata(dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+
+	return removeSkippedDirs(root)
+}
+
+func removeSkippedDirs(root *os.Root) error {
+	for _, skip := range dirsToSkip {
+		if err := root.RemoveAll(skip); err != nil {
+			return fmt.Errorf("error removing path %s: %w", skip, err)
+		}
+	}
+	return nil
+}
+
+// matchesAny reports whether rel, its base name, or any of its parent
+// directories matches one of the glob patterns.
+func matchesAny(patterns []string, rel string) bool {
+	for _, pattern := range patterns {
+		if ok, _ := path.Match(pattern, path.Base(rel)); ok {
+			return true
+		}
+		for candidate := rel; candidate != "."; candidate = path.Dir(candidate) {
+			if ok, _ := path.Match(pattern, candidate); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // NewTemplateProcessor instantiates a Processor equipped with a RendererService.
