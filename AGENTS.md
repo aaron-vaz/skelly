@@ -51,7 +51,8 @@ make deps       # Install dependencies and golangci-lint
 cmd/skelly/        # Main entry point
 internal/          # Private packages (not importable externally)
   cli/             # CLI parsing and command invocation
-  commands/        # Command implementations
+  commands/        # Command implementations (Group nests subcommands, e.g. "sources add")
+  config/          # User config file (registered template sources, settings)
   download/        # Template download functionality
   templates/       # Template processing and rendering
   view/            # User interface (I/O)

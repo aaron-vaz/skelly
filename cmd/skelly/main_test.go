@@ -436,3 +436,98 @@ func TestIntegration_Init_NoConfigSkipsGitDir(t *testing.T) {
 		t.Errorf("Expected only the destination next to it, found %v", entries)
 	}
 }
+
+func TestIntegration_Sources(t *testing.T) {
+	// Given a template and an isolated config file
+	srcDir := writeTemplate(t, map[string]string{
+		".skelly.yml":                "inputs:\n  name:\n    description: \"Project name\"\n",
+		"{{.Inputs.name.Value}}.txt": "hello {{.Inputs.name.Value}}",
+	})
+	configPath := filepath.Join(t.TempDir(), "skelly", "config.yml")
+	skelly := func(stdin string, args ...string) (string, error) {
+		cmd := exec.Command("./"+binName, args...)
+		cmd.Env = append(os.Environ(), "SKELLY_CONFIG="+configPath)
+		cmd.Stdin = strings.NewReader(stdin)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	// When the template is registered
+	out, err := skelly("", "sources", "add", "mine", srcDir)
+
+	// Then
+	if err != nil {
+		t.Fatalf("Expected sources add to succeed, got %v: %s", err, out)
+	}
+
+	// And it is listed
+	out, err = skelly("", "sources", "list")
+	if err != nil || !strings.Contains(out, "mine") || !strings.Contains(out, srcDir) {
+		t.Errorf("Expected list to show the alias, got %v: %s", err, out)
+	}
+
+	// And init accepts the alias in place of the source
+	destDir := filepath.Join(t.TempDir(), "dest")
+	out, err = skelly("demo\n", "init", "mine", "-dst", destDir)
+	if err != nil {
+		t.Fatalf("Expected init via alias to succeed, got %v: %s", err, out)
+	}
+	content, err := os.ReadFile(filepath.Join(destDir, "demo.txt"))
+	if err != nil || string(content) != "hello demo" {
+		t.Errorf("Expected demo.txt with 'hello demo', got %q (%v)", content, err)
+	}
+
+	// And registering the alias again with another source needs -force
+	if out, err := skelly("", "sources", "add", "mine", "github.com/other/template"); err == nil || !strings.Contains(out, "-force") {
+		t.Errorf("Expected sources add to refuse replacing the alias, got %v: %s", err, out)
+	}
+
+	// When the alias is removed
+	out, err = skelly("", "sources", "remove", "mine")
+
+	// Then
+	if err != nil {
+		t.Fatalf("Expected sources remove to succeed, got %v: %s", err, out)
+	}
+
+	// And it is no longer listed
+	out, err = skelly("", "sources", "list")
+	if err != nil || strings.Contains(out, srcDir) {
+		t.Errorf("Expected the alias to be gone, got %v: %s", err, out)
+	}
+}
+
+func TestIntegration_SourcesHelp(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		want    string
+		wantErr bool
+	}{
+		{name: "group lists subcommands", args: []string{"sources"}, want: "Usage: skelly sources COMMAND"},
+		{name: "help for the group", args: []string{"help", "sources"}, want: "Usage: skelly sources COMMAND"},
+		{name: "subcommand help flag", args: []string{"sources", "add", "-h"}, want: "Usage: skelly sources add"},
+		{name: "unknown subcommand", args: []string{"sources", "nope"}, want: "unknown command: sources nope", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			cmd := exec.Command("./"+binName, tt.args...)
+			cmd.Env = append(os.Environ(), "SKELLY_CONFIG="+filepath.Join(t.TempDir(), "config.yml"))
+
+			// When
+			out, err := cmd.CombinedOutput()
+
+			// Then
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v: %s", err, tt.wantErr, out)
+			}
+
+			// And
+			if !strings.Contains(string(out), tt.want) {
+				t.Errorf("Expected output containing %q, got %s", tt.want, out)
+			}
+		})
+	}
+}

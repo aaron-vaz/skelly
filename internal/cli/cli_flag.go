@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/aaron-vaz/skelly/internal/commands"
+	"github.com/aaron-vaz/skelly/internal/config"
 	"github.com/aaron-vaz/skelly/internal/download"
 	"github.com/aaron-vaz/skelly/internal/templates"
 	"github.com/aaron-vaz/skelly/internal/view"
@@ -31,18 +33,19 @@ func (i *FlagCommandInvoker) Execute(ctx context.Context, args []string) error {
 	if !ok {
 		return fmt.Errorf("unknown command: %s", cmdName)
 	}
+	cmd, path, args := commands.Resolve(cmd, args[1:])
 
 	flags := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
 	// Help and errors are rendered by us, so silence the flag package's own output
 	flags.SetOutput(io.Discard)
 	cmd.Init(flags)
 
-	positional, err := parseInterspersed(flags, args[1:])
+	positional, err := parseInterspersed(flags, args)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return i.commands["help"].Run(ctx, []string{cmd.Name()})
+			return i.commands["help"].Run(ctx, strings.Fields(path))
 		}
-		return fmt.Errorf("failed to parse flags for command '%s': %w", cmd.Name(), err)
+		return fmt.Errorf("failed to parse flags for command '%s': %w", path, err)
 	}
 
 	return cmd.Run(ctx, positional)
@@ -74,6 +77,7 @@ func parseInterspersed(flags *flag.FlagSet, args []string) ([]string, error) {
 func NewFlagCommandInvoker(
 	downloader download.Downloader,
 	processor *templates.Processor,
+	store config.Store,
 	ui view.UI,
 ) commands.Invoker {
 	invoker := &FlagCommandInvoker{
@@ -81,7 +85,8 @@ func NewFlagCommandInvoker(
 	}
 
 	cmds := []commands.Command{
-		commands.NewInitCommand(processor, downloader, ui),
+		commands.NewInitCommand(processor, downloader, store, ui),
+		commands.NewSourcesCommand(store, ui),
 		commands.NewHelpCommand(invoker.commands, ui),
 		commands.NewVersionCommand(ui),
 	}
