@@ -94,7 +94,7 @@ func NewInitCommand(
     processor *templates.Processor,
     downloader download.Downloader,
     ui view.UI,
-) Command[*flag.FlagSet] {
+) Command {
     return &InitCommand{
         processor:  processor,
         downloader: downloader,
@@ -134,15 +134,24 @@ type Downloader interface {
 
 ### Generics
 
-The codebase uses Go generics. Example:
+Only reach for generics when a type parameter genuinely varies. Commands are a
+plain interface because every command is configured through `*flag.FlagSet`:
 
 ```go
-type Command[T any] interface {
+type Command interface {
     Name() string
-    Init(flags T)
-    Run(args []string) error
+    Description() string
+    Init(flags *flag.FlagSet)
+    Run(ctx context.Context, args []string) error
 }
 ```
+
+### Filesystem Safety
+
+Templates are untrusted input. Any code that reads or writes inside a template
+directory must go through an `os.Root` (see `internal/templates/processor.go`)
+so symlinks and rendered names cannot escape it, and `init` must only touch the
+destination after download and rendering have fully succeeded.
 
 ### File Organization
 

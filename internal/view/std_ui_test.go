@@ -2,6 +2,7 @@ package view
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -23,7 +24,7 @@ func TestStdUI_RenderInfo(t *testing.T) {
 		t.Fatalf("RenderInfo failed: %v", err)
 	}
 
-	w.Close()
+	_ = w.Close()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 
@@ -46,7 +47,7 @@ func TestStdUI_RenderError(t *testing.T) {
 		t.Fatalf("RenderError failed: %v", err)
 	}
 
-	w.Close()
+	_ = w.Close()
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
 
@@ -65,12 +66,12 @@ func TestStdUI_RenderQuestion(t *testing.T) {
 
 	go func() {
 		_, _ = inW.WriteString("y\n")
-		inW.Close()
+		_ = inW.Close()
 	}()
 
 	// When
 	ans, err := ui.RenderQuestion("Are you sure?", []string{"y", "n"})
-	outW.Close()
+	_ = outW.Close()
 
 	// Then
 	if err != nil {
@@ -107,7 +108,7 @@ func TestStdUI_RenderInputs(t *testing.T) {
 		_, _ = inW.WriteString("\n")
 		// req_input asked third: Provide valid value
 		_, _ = inW.WriteString("valid-val\n")
-		inW.Close()
+		_ = inW.Close()
 	}()
 
 	inputs := map[string]templates.Input{
@@ -123,8 +124,8 @@ func TestStdUI_RenderInputs(t *testing.T) {
 
 	// When
 	err := ui.RenderInputs(inputs)
-	outW.Close()
-	errW.Close()
+	_ = outW.Close()
+	_ = errW.Close()
 
 	// Then
 	if err != nil {
@@ -160,5 +161,60 @@ func TestStdUI_RenderInputs_Empty(t *testing.T) {
 	// Then
 	if err != nil {
 		t.Errorf("Expected nil on empty inputs, got %v", err)
+	}
+}
+
+func TestStdUI_RenderInputs_ClosedInput(t *testing.T) {
+	// Given
+	var out, errOut bytes.Buffer
+	ui := NewStdUI(strings.NewReader(""), &out, &errOut)
+	inputs := map[string]templates.Input{
+		"req_input": {Description: "A required input"},
+	}
+
+	// When
+	err := ui.RenderInputs(inputs)
+
+	// Then
+	if !errors.Is(err, ErrNoInput) {
+		t.Errorf("RenderInputs() error = %v, want ErrNoInput", err)
+	}
+}
+
+func TestStdUI_RenderQuestion_ClosedInput(t *testing.T) {
+	// Given
+	var out bytes.Buffer
+	ui := NewStdUI(strings.NewReader(""), &out, &out)
+
+	// When
+	_, err := ui.RenderQuestion("Continue?", []string{"y", "n"})
+
+	// Then
+	if !errors.Is(err, ErrNoInput) {
+		t.Errorf("RenderQuestion() error = %v, want ErrNoInput", err)
+	}
+}
+
+func TestStdUI_RenderQuestion_TrimsAnswer(t *testing.T) {
+	// Given
+	var out bytes.Buffer
+	ui := NewStdUI(strings.NewReader("  y \r\n"), &out, &out)
+
+	// When
+	ans, err := ui.RenderQuestion("Continue?", []string{"y", "n"})
+
+	// Then
+	if err != nil {
+		t.Fatalf("RenderQuestion() error = %v", err)
+	}
+
+	// And
+	if ans != "y" {
+		t.Errorf("RenderQuestion() = %q, want %q", ans, "y")
+	}
+
+	// And
+	if strings.Contains(out.String(), "??") {
+		t.Errorf("Expected a single question mark, got %q", out.String())
 	}
 }

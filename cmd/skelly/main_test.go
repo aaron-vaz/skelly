@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 var binName = "skelly_test_bin"
@@ -15,7 +16,7 @@ func TestMain(m *testing.M) {
 	// Build the CLI binary
 	build := exec.Command("go", "build", "-o", binName)
 	if err := build.Run(); err != nil {
-		os.Stderr.WriteString("Could not build binary: " + err.Error() + "\n")
+		_, _ = os.Stderr.WriteString("Could not build binary: " + err.Error() + "\n")
 		os.Exit(1)
 	}
 
@@ -102,7 +103,7 @@ inputs:
 
 	// Provide interactive stdin input asynchronously
 	go func() {
-		defer stdin.Close()
+		defer func() { _ = stdin.Close() }()
 		// Author input (required as no default)
 		_, _ = io.WriteString(stdin, "John Doe\n")
 		// Project_name input (has default "my-app", we hit enter to accept)
@@ -175,6 +176,9 @@ inputs:
 		t.Fatalf("Failed to write template file: %v", err)
 	}
 
+	// A pre-existing file means the overwrite prompt is shown
+	_ = os.WriteFile(filepath.Join(destDir, "old.txt"), []byte("old"), 0644)
+
 	// Prepare execution
 	absBin, _ := filepath.Abs(binName)
 	cmd := exec.Command(absBin, "init", "-src", srcDir)
@@ -187,8 +191,8 @@ inputs:
 
 	// Provide interactive stdin input asynchronously
 	go func() {
-		defer stdin.Close()
-		// Overwrite prompt (because destDir . exists)
+		defer func() { _ = stdin.Close() }()
+		// Overwrite prompt (because destDir . is not empty)
 		_, _ = io.WriteString(stdin, "y\n")
 		// Author input (required as no default)
 		_, _ = io.WriteString(stdin, "Jane Doe\n")
@@ -215,4 +219,110 @@ inputs:
 	if string(content) != "Author: Jane Doe" {
 		t.Errorf("Expected generated file content 'Author: Jane Doe', got %s", string(content))
 	}
+
+	// And
+	if _, err := os.Stat(filepath.Join(destDir, "old.txt")); !os.IsNotExist(err) {
+		t.Errorf("Expected pre-existing file to be replaced")
+	}
+}
+
+func TestIntegration_Init_ClosedStdin(t *testing.T) {
+	// Given
+	srcDir := writeTemplate(t, map[string]string{
+		".skelly.yml": "inputs:\n  author:\n    description: \"Author's name\"\n",
+		"a.txt":       "{{.Inputs.author.Value}}",
+	})
+	destDir := filepath.Join(t.TempDir(), "dest")
+	cmd := exec.Command("./"+binName, "init", "-src", srcDir, "-dst", destDir)
+	cmd.Stdin = strings.NewReader("")
+
+	// When
+	done := make(chan struct{})
+	var out []byte
+	var err error
+	go func() {
+		out, err = cmd.CombinedOutput()
+		close(done)
+	}()
+
+	// Then
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("init hung waiting for input on a closed stdin")
+	}
+	if err == nil || !strings.Contains(string(out), "input closed") {
+		t.Errorf("Expected a closed input error, got %v: %s", err, string(out))
+	}
+
+	// And
+	if _, err := os.Stat(destDir); !os.IsNotExist(err) {
+		t.Errorf("Expected destination not to be created on failure")
+	}
+}
+
+func TestIntegration_Init_NestedAndRaw(t *testing.T) {
+	// Given
+	srcDir := writeTemplate(t, map[string]string{
+		".skelly.yml": "raw: [\".github\"]\ninputs:\n  name:\n    description: \"Project name\"\n",
+		"{{.Inputs.name.Value}}/{{.Inputs.name.Value}}.go": "package {{.Inputs.name.Value}}",
+		".github/workflows/ci.yml":                         "sha: ${{ github.sha }}",
+	})
+	destDir := filepath.Join(t.TempDir(), "dest")
+
+	// When
+	cmd := exec.Command("./"+binName, "init", "-dst", destDir, srcDir)
+	cmd.Stdin = strings.NewReader("demo\n")
+	out, err := cmd.CombinedOutput()
+
+	// Then
+	if err != nil {
+		t.Fatalf("Expected no error from init run, got %v: %s", err, string(out))
+	}
+
+	// And
+	content, err := os.ReadFile(filepath.Join(destDir, "demo", "demo.go"))
+	if err != nil || string(content) != "package demo" {
+		t.Errorf("Expected demo/demo.go with 'package demo', got %q (%v)", content, err)
+	}
+
+	// And
+	content, err = os.ReadFile(filepath.Join(destDir, ".github", "workflows", "ci.yml"))
+	if err != nil || string(content) != "sha: ${{ github.sha }}" {
+		t.Errorf("Expected raw workflow to be copied unrendered, got %q (%v)", content, err)
+	}
+}
+
+func TestIntegration_InitHelpFlag(t *testing.T) {
+	// Given
+	cmd := exec.Command("./"+binName, "init", "-h")
+
+	// When
+	out, err := cmd.CombinedOutput()
+
+	// Then
+	if err != nil {
+		t.Fatalf("Expected -h to succeed, got %v: %s", err, string(out))
+	}
+
+	// And
+	if !strings.Contains(string(out), "Usage: skelly init") || strings.Contains(string(out), "Error") {
+		t.Errorf("Expected init help output, got %s", string(out))
+	}
+}
+
+func writeTemplate(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for rel, content := range files {
+		full := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
 }

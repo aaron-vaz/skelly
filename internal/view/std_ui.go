@@ -2,20 +2,24 @@ package view
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
-	"os"
-	"sort"
+	"io"
+	"slices"
 	"strings"
 
 	"github.com/aaron-vaz/skelly/internal/templates"
 )
 
+// ErrNoInput is returned when stdin is closed before the user provided an answer.
+var ErrNoInput = errors.New("input closed before a value was provided")
+
 // StdUI is a standard I/O implementation of the UI interface, facilitating
-// interaction with the user via os streams.
+// interaction with the user via the provided streams.
 type StdUI struct {
 	stdin  *bufio.Scanner
-	stdout *os.File
-	stderr *os.File
+	stdout io.Writer
+	stderr io.Writer
 }
 
 // RenderInputs interactively prompts the user for all parameters defined in the template config.
@@ -36,12 +40,11 @@ func (s *StdUI) RenderInputs(inputs map[string]templates.Input) error {
 	for k := range inputs {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	for _, name := range keys {
 		input := inputs[name]
-		err := s.renderInput(name, &input)
-		if err != nil {
+		if err := s.renderInput(name, &input); err != nil {
 			return err
 		}
 
@@ -53,7 +56,7 @@ func (s *StdUI) RenderInputs(inputs map[string]templates.Input) error {
 
 // RenderQuestion poses a question to the user and awaits a formatted string response.
 func (s *StdUI) RenderQuestion(question string, options []string) (string, error) {
-	_, err := fmt.Fprintf(s.stdout, "%s? [%s]\n", question, strings.Join(options, "/"))
+	_, err := fmt.Fprintf(s.stdout, "%s [%s]\n", question, strings.Join(options, "/"))
 	if err != nil {
 		return "", err
 	}
@@ -61,62 +64,67 @@ func (s *StdUI) RenderQuestion(question string, options []string) (string, error
 	return s.waitForUserInput()
 }
 
+// RenderInfo writes an informational message to stdout.
 func (s *StdUI) RenderInfo(message string) error {
 	_, err := fmt.Fprintf(s.stdout, "%s\n", message)
 	return err
 }
 
+// RenderError writes an error message to stderr.
 func (s *StdUI) RenderError(message string) error {
 	_, err := fmt.Fprintf(s.stderr, "%s\n", message)
 	return err
 }
 
 func (s *StdUI) renderInput(name string, input *templates.Input) error {
-	required := false
-	defaultValue := input.Default
-	if defaultValue == "" || defaultValue == nil {
-		required = true
-		defaultValue = "*" // required
+	required := input.Default == nil || input.Default == ""
+	shownDefault := input.Default
+	if required {
+		shownDefault = "*"
 	}
 
-	_, err := fmt.Fprintf(s.stdout, "%s: \n%s: [%s]\n", name, input.Description, defaultValue)
-	if err != nil {
-		return fmt.Errorf("failed to write prompt for '%s': %w", name, err)
-	}
-
-	userInput, err := s.waitForUserInput()
-	if err != nil {
-		return fmt.Errorf("failed to read user input for '%s': %w", name, err)
-	}
-
-	if userInput == "" {
-		if required {
-			_ = s.RenderError(fmt.Sprintf("This input '%s' is required. Please provide a value.\n", name))
-			return s.renderInput(name, input)
+	for {
+		_, err := fmt.Fprintf(s.stdout, "%s: \n%s: [%v]\n", name, input.Description, shownDefault)
+		if err != nil {
+			return fmt.Errorf("failed to write prompt for '%s': %w", name, err)
 		}
 
-		input.Value = input.Default
-	} else {
-		input.Value = userInput
-	}
+		userInput, err := s.waitForUserInput()
+		if err != nil {
+			return fmt.Errorf("failed to read user input for '%s': %w", name, err)
+		}
 
-	return nil
+		switch {
+		case userInput != "":
+			input.Value = userInput
+			return nil
+		case !required:
+			input.Value = input.Default
+			return nil
+		}
+
+		_ = s.RenderError(fmt.Sprintf("This input '%s' is required. Please provide a value.\n", name))
+	}
 }
 
 func (s *StdUI) waitForUserInput() (string, error) {
-	s.stdin.Scan()
+	if !s.stdin.Scan() {
+		if err := s.stdin.Err(); err != nil {
+			return "", err
+		}
+		return "", ErrNoInput
+	}
 
 	// add new line after input
-	_, err := s.stdout.WriteString("\n")
-	if err != nil {
+	if _, err := io.WriteString(s.stdout, "\n"); err != nil {
 		return "", err
 	}
 
-	return s.stdin.Text(), s.stdin.Err()
+	return strings.TrimSpace(s.stdin.Text()), nil
 }
 
-// NewStdUI returns a ready-to-use StdUI backed by the provided file descriptors.
-func NewStdUI(stdin *os.File, stdout *os.File, stderr *os.File) UI {
+// NewStdUI returns a ready-to-use StdUI backed by the provided streams.
+func NewStdUI(stdin io.Reader, stdout io.Writer, stderr io.Writer) UI {
 	return &StdUI{
 		stdin:  bufio.NewScanner(stdin),
 		stdout: stdout,

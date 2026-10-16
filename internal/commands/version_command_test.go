@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestVersionCommand_Run(t *testing.T) {
 	cmd := NewVersionCommand(ui)
 
 	// When
-	err := cmd.Run(nil)
+	err := cmd.Run(context.Background(), nil)
 
 	// Then
 	if err != nil {

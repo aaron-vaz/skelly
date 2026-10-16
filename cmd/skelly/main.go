@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -27,5 +28,8 @@ func run() error {
 	ui := view.NewStdUI(os.Stdin, os.Stdout, os.Stderr)
 	invoker := cli.NewFlagCommandInvoker(downloader, processor, ui)
 
-	return invoker.Execute(os.Args[1:])
+	// Ctrl+C is deliberately not trapped: it must still interrupt a blocking prompt,
+	// and init only writes to the destination as its very last step, so killing the
+	// process mid-run leaves the destination untouched.
+	return invoker.Execute(context.Background(), os.Args[1:])
 }
