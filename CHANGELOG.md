@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/aaron-vaz/skelly/compare/v0.3.0...v0.3.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* make init safe, fix template rendering bugs, handle Ctrl+C and validate config ([#18](https://github.com/aaron-vaz/skelly/issues/18)) ([8cd9a30](https://github.com/aaron-vaz/skelly/commit/8cd9a30cb1f7ce2fef42dea0e7c8e77715cd151a))
+
 ## [0.3.0](https://github.com/aaron-vaz/skelly/compare/v0.2.0...v0.3.0) (2026-03-21)
 
 
