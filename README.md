@@ -38,7 +38,7 @@ Download the pre-compiled binary for your operating system from the **latest rel
 
 ### From Source
 
-Ensure you have Go (1.24 or later) installed on your system.
+Ensure you have Go (1.26 or later) installed on your system.
 
 ```bash
 go install github.com/aaron-vaz/skelly/cmd/skelly@latest
@@ -87,6 +87,7 @@ raw:
 Notes:
 
 *   Referencing an input that is not defined is an error, rather than silently rendering `<no value>`.
+*   `.skelly.yml` is validated up front: input names must not be blank, defaults must be a string, number or boolean, and `raw` patterns must be valid globs.
 *   A rendered name may contain `/` to create nested directories (handy for Java packages), but can never point outside the project.
 *   Binary files and symlinks are copied without rendering; the template's `.git` directory and `.skelly.yml` are not copied at all.
 

@@ -12,8 +12,12 @@ type mockUI struct {
 	infoMsgs []string
 }
 
-func (m *mockUI) RenderInputs(inputs map[string]templates.Input) error             { return nil }
-func (m *mockUI) RenderQuestion(question string, options []string) (string, error) { return "", nil }
+func (m *mockUI) RenderInputs(ctx context.Context, inputs map[string]templates.Input) error {
+	return nil
+}
+func (m *mockUI) RenderQuestion(ctx context.Context, question string, options []string) (string, error) {
+	return "", nil
+}
 func (m *mockUI) RenderInfo(message string) error {
 	m.infoMsgs = append(m.infoMsgs, message)
 	return nil

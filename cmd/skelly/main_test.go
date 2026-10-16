@@ -326,3 +326,81 @@ func writeTemplate(t *testing.T, files map[string]string) string {
 	}
 	return dir
 }
+
+func TestIntegration_Init_Interrupted(t *testing.T) {
+	// Given a template whose required input is never answered
+	srcDir := writeTemplate(t, map[string]string{
+		".skelly.yml": "inputs:\n  author:\n    description: \"Author's name\"\n",
+		"a.txt":       "{{.Inputs.author.Value}}",
+	})
+	destDir := filepath.Join(t.TempDir(), "dest")
+	tmpDir := t.TempDir()
+
+	cmd := exec.Command("./"+binName, "init", "-src", srcDir, "-dst", destDir)
+	cmd.Env = append(os.Environ(), "TMPDIR="+tmpDir)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("Failed to create stdin pipe: %v", err)
+	}
+	defer func() { _ = stdin.Close() }()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("Failed to create stdout pipe: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Failed to start init: %v", err)
+	}
+
+	// And init is waiting at the prompt
+	prompted := make(chan struct{})
+	go func() {
+		buf := make([]byte, 4096)
+		var seen strings.Builder
+		for {
+			n, err := stdout.Read(buf)
+			seen.Write(buf[:n])
+			if strings.Contains(seen.String(), "author") {
+				close(prompted)
+				_, _ = io.Copy(io.Discard, stdout)
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	select {
+	case <-prompted:
+	case <-time.After(10 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("init never prompted for input")
+	}
+
+	// When Ctrl+C is pressed
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatalf("Failed to send interrupt: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	// Then init exits with an error instead of hanging at the prompt
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("Expected init to fail after interrupt")
+		}
+	case <-time.After(10 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("init did not exit after interrupt")
+	}
+
+	// And the destination was never created
+	if _, err := os.Stat(destDir); !os.IsNotExist(err) {
+		t.Errorf("Expected destination to be untouched, stat err = %v", err)
+	}
+
+	// And the working directory was cleaned up
+	if entries, _ := os.ReadDir(tmpDir); len(entries) != 0 {
+		t.Errorf("Expected working directory to be removed, found %v", entries)
+	}
+}

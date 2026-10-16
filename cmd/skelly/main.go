@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/aaron-vaz/skelly/internal/cli"
 	"github.com/aaron-vaz/skelly/internal/download"
@@ -28,8 +30,12 @@ func run() error {
 	ui := view.NewStdUI(os.Stdin, os.Stdout, os.Stderr)
 	invoker := cli.NewFlagCommandInvoker(downloader, processor, ui)
 
-	// Ctrl+C is deliberately not trapped: it must still interrupt a blocking prompt,
-	// and init only writes to the destination as its very last step, so killing the
-	// process mid-run leaves the destination untouched.
-	return invoker.Execute(context.Background(), os.Args[1:])
+	// Trapping the first Ctrl+C lets init stop and remove its working directory;
+	// once it fires, the default handler is restored so a second Ctrl+C still
+	// kills the process outright.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	context.AfterFunc(ctx, stop)
+
+	return invoker.Execute(ctx, os.Args[1:])
 }

@@ -2,11 +2,13 @@ package view
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/aaron-vaz/skelly/internal/templates"
 )
@@ -17,13 +19,20 @@ var ErrNoInput = errors.New("input closed before a value was provided")
 // StdUI is a standard I/O implementation of the UI interface, facilitating
 // interaction with the user via the provided streams.
 type StdUI struct {
-	stdin  *bufio.Scanner
-	stdout io.Writer
-	stderr io.Writer
+	stdin       *bufio.Scanner
+	stdout      io.Writer
+	stderr      io.Writer
+	lines       chan scannedLine
+	startReader sync.Once
+}
+
+type scannedLine struct {
+	text string
+	err  error
 }
 
 // RenderInputs interactively prompts the user for all parameters defined in the template config.
-func (s *StdUI) RenderInputs(inputs map[string]templates.Input) error {
+func (s *StdUI) RenderInputs(ctx context.Context, inputs map[string]templates.Input) error {
 	// No need to render if there are no inputs defined in the config
 	// this is not an error, just a no-op
 	if len(inputs) == 0 {
@@ -44,7 +53,7 @@ func (s *StdUI) RenderInputs(inputs map[string]templates.Input) error {
 
 	for _, name := range keys {
 		input := inputs[name]
-		if err := s.renderInput(name, &input); err != nil {
+		if err := s.renderInput(ctx, name, &input); err != nil {
 			return err
 		}
 
@@ -55,13 +64,13 @@ func (s *StdUI) RenderInputs(inputs map[string]templates.Input) error {
 }
 
 // RenderQuestion poses a question to the user and awaits a formatted string response.
-func (s *StdUI) RenderQuestion(question string, options []string) (string, error) {
+func (s *StdUI) RenderQuestion(ctx context.Context, question string, options []string) (string, error) {
 	_, err := fmt.Fprintf(s.stdout, "%s [%s]\n", question, strings.Join(options, "/"))
 	if err != nil {
 		return "", err
 	}
 
-	return s.waitForUserInput()
+	return s.waitForUserInput(ctx)
 }
 
 // RenderInfo writes an informational message to stdout.
@@ -76,7 +85,7 @@ func (s *StdUI) RenderError(message string) error {
 	return err
 }
 
-func (s *StdUI) renderInput(name string, input *templates.Input) error {
+func (s *StdUI) renderInput(ctx context.Context, name string, input *templates.Input) error {
 	required := input.Default == nil || input.Default == ""
 	shownDefault := input.Default
 	if required {
@@ -89,7 +98,7 @@ func (s *StdUI) renderInput(name string, input *templates.Input) error {
 			return fmt.Errorf("failed to write prompt for '%s': %w", name, err)
 		}
 
-		userInput, err := s.waitForUserInput()
+		userInput, err := s.waitForUserInput(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read user input for '%s': %w", name, err)
 		}
@@ -107,12 +116,23 @@ func (s *StdUI) renderInput(name string, input *templates.Input) error {
 	}
 }
 
-func (s *StdUI) waitForUserInput() (string, error) {
-	if !s.stdin.Scan() {
-		if err := s.stdin.Err(); err != nil {
-			return "", err
+// waitForUserInput reads stdin on a background goroutine because a blocked
+// read cannot be interrupted; a cancelled ctx abandons the read instead.
+func (s *StdUI) waitForUserInput(ctx context.Context) (string, error) {
+	s.startReader.Do(func() { go s.readLines() })
+
+	var line scannedLine
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case l, ok := <-s.lines:
+		if !ok {
+			return "", ErrNoInput
 		}
-		return "", ErrNoInput
+		line = l
+	}
+	if line.err != nil {
+		return "", line.err
 	}
 
 	// add new line after input
@@ -120,7 +140,17 @@ func (s *StdUI) waitForUserInput() (string, error) {
 		return "", err
 	}
 
-	return strings.TrimSpace(s.stdin.Text()), nil
+	return strings.TrimSpace(line.text), nil
+}
+
+func (s *StdUI) readLines() {
+	defer close(s.lines)
+	for s.stdin.Scan() {
+		s.lines <- scannedLine{text: s.stdin.Text()}
+	}
+	if err := s.stdin.Err(); err != nil {
+		s.lines <- scannedLine{err: err}
+	}
 }
 
 // NewStdUI returns a ready-to-use StdUI backed by the provided streams.
@@ -129,5 +159,6 @@ func NewStdUI(stdin io.Reader, stdout io.Writer, stderr io.Writer) UI {
 		stdin:  bufio.NewScanner(stdin),
 		stdout: stdout,
 		stderr: stderr,
+		lines:  make(chan scannedLine),
 	}
 }

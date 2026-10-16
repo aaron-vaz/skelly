@@ -61,7 +61,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 	}
 	dest := c.options.destination
 
-	proceed, overwrite, err := c.confirmDestination(dest)
+	proceed, overwrite, err := c.confirmDestination(ctx, dest)
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 	if config == nil {
 		_ = c.ui.RenderInfo(fmt.Sprintf("No %s file found in template, copying files without rendering", templates.TemplateConfigName))
 	} else {
-		if err := c.ui.RenderInputs(config.Inputs); err != nil {
+		if err := c.ui.RenderInputs(ctx, config.Inputs); err != nil {
 			return fmt.Errorf("failed to collect inputs: %w", err)
 		}
 
@@ -99,6 +99,13 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 			return fmt.Errorf("failed to render template: %w", err)
 		}
 	}
+
+	// From here on the destination is being replaced, so finish even if
+	// interrupted: stopping halfway would leave it neither old nor new.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ctx = context.WithoutCancel(ctx)
 
 	if overwrite {
 		if err := clearDir(dest); err != nil {
@@ -138,7 +145,7 @@ func (c *InitCommand) resolveOptions(args []string) error {
 // confirmDestination checks whether dest already has content, and if so asks
 // the user whether it may be replaced. proceed is false if the user declined,
 // and overwrite reports whether the existing contents need clearing first.
-func (c *InitCommand) confirmDestination(dest string) (proceed bool, overwrite bool, err error) {
+func (c *InitCommand) confirmDestination(ctx context.Context, dest string) (proceed bool, overwrite bool, err error) {
 	empty, err := isEmptyDir(dest)
 	if err != nil {
 		return false, false, fmt.Errorf("failed to inspect destination: %w", err)
@@ -151,7 +158,7 @@ func (c *InitCommand) confirmDestination(dest string) (proceed bool, overwrite b
 		return false, false, err
 	}
 
-	answer, err := c.ui.RenderQuestion(fmt.Sprintf("Destination %s is not empty. Delete its contents and replace them with the new project?", dest), []string{"y", "n"})
+	answer, err := c.ui.RenderQuestion(ctx, fmt.Sprintf("Destination %s is not empty. Delete its contents and replace them with the new project?", dest), []string{"y", "n"})
 	if err != nil {
 		return false, false, fmt.Errorf("failed to get user input: %w", err)
 	}

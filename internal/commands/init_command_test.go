@@ -42,8 +42,10 @@ type mockUIInit struct {
 	questions []string
 }
 
-func (m *mockUIInit) RenderInputs(inputs map[string]templates.Input) error { return nil }
-func (m *mockUIInit) RenderQuestion(question string, options []string) (string, error) {
+func (m *mockUIInit) RenderInputs(ctx context.Context, inputs map[string]templates.Input) error {
+	return nil
+}
+func (m *mockUIInit) RenderQuestion(ctx context.Context, question string, options []string) (string, error) {
 	m.questions = append(m.questions, question)
 	return m.returns.questionAnswer, m.returns.questionErr
 }

@@ -2,6 +2,7 @@ package view
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -70,7 +71,7 @@ func TestStdUI_RenderQuestion(t *testing.T) {
 	}()
 
 	// When
-	ans, err := ui.RenderQuestion("Are you sure?", []string{"y", "n"})
+	ans, err := ui.RenderQuestion(context.Background(), "Are you sure?", []string{"y", "n"})
 	_ = outW.Close()
 
 	// Then
@@ -123,7 +124,7 @@ func TestStdUI_RenderInputs(t *testing.T) {
 	}
 
 	// When
-	err := ui.RenderInputs(inputs)
+	err := ui.RenderInputs(context.Background(), inputs)
 	_ = outW.Close()
 	_ = errW.Close()
 
@@ -156,7 +157,7 @@ func TestStdUI_RenderInputs_Empty(t *testing.T) {
 	ui := NewStdUI(os.Stdin, os.Stdout, os.Stderr)
 
 	// When
-	err := ui.RenderInputs(map[string]templates.Input{})
+	err := ui.RenderInputs(context.Background(), map[string]templates.Input{})
 
 	// Then
 	if err != nil {
@@ -173,7 +174,7 @@ func TestStdUI_RenderInputs_ClosedInput(t *testing.T) {
 	}
 
 	// When
-	err := ui.RenderInputs(inputs)
+	err := ui.RenderInputs(context.Background(), inputs)
 
 	// Then
 	if !errors.Is(err, ErrNoInput) {
@@ -187,7 +188,7 @@ func TestStdUI_RenderQuestion_ClosedInput(t *testing.T) {
 	ui := NewStdUI(strings.NewReader(""), &out, &out)
 
 	// When
-	_, err := ui.RenderQuestion("Continue?", []string{"y", "n"})
+	_, err := ui.RenderQuestion(context.Background(), "Continue?", []string{"y", "n"})
 
 	// Then
 	if !errors.Is(err, ErrNoInput) {
@@ -201,7 +202,7 @@ func TestStdUI_RenderQuestion_TrimsAnswer(t *testing.T) {
 	ui := NewStdUI(strings.NewReader("  y \r\n"), &out, &out)
 
 	// When
-	ans, err := ui.RenderQuestion("Continue?", []string{"y", "n"})
+	ans, err := ui.RenderQuestion(context.Background(), "Continue?", []string{"y", "n"})
 
 	// Then
 	if err != nil {
@@ -216,5 +217,22 @@ func TestStdUI_RenderQuestion_TrimsAnswer(t *testing.T) {
 	// And
 	if strings.Contains(out.String(), "??") {
 		t.Errorf("Expected a single question mark, got %q", out.String())
+	}
+}
+
+func TestStdUI_RenderQuestion_Cancelled(t *testing.T) {
+	// Given a prompt waiting on input that never arrives
+	inR, inW := io.Pipe()
+	defer func() { _ = inW.Close() }()
+	ui := NewStdUI(inR, io.Discard, io.Discard)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// When the context is cancelled mid-prompt
+	cancel()
+	_, err := ui.RenderQuestion(ctx, "Continue?", []string{"y", "n"})
+
+	// Then the prompt gives up instead of blocking
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("RenderQuestion() error = %v, want context.Canceled", err)
 	}
 }

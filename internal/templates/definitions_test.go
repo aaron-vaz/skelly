@@ -1,0 +1,80 @@
+package templates
+
+import (
+	"strings"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+)
+
+func TestProjectTemplate_Validate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		wantErr []string
+	}{
+		{
+			name:   "minimal config",
+			config: `name: test`,
+		},
+		{
+			name: "scalar defaults",
+			config: `
+inputs:
+  text: {default: hello}
+  count: {default: 3}
+  ratio: {default: 0.5}
+  enabled: {default: true}
+  required: {description: no default}`,
+		},
+		{
+			name: "blank input name",
+			config: `
+inputs:
+  " ": {description: blank}`,
+			wantErr: []string{"input name must not be blank"},
+		},
+		{
+			name: "list and map defaults",
+			config: `
+inputs:
+  list: {default: [1, 2]}
+  dict: {default: {a: b}}`,
+			wantErr: []string{`input "dict": default must be`, `input "list": default must be`},
+		},
+		{
+			name:    "invalid raw pattern",
+			config:  `raw: ['[unclosed']`,
+			wantErr: []string{`invalid raw pattern "[unclosed"`},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			var config ProjectTemplate
+			if err := yaml.Unmarshal([]byte(tt.config), &config); err != nil {
+				t.Fatalf("failed to parse config: %v", err)
+			}
+
+			// When
+			err := config.Validate()
+
+			// Then
+			if len(tt.wantErr) == 0 {
+				if err != nil {
+					t.Errorf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate() error = nil, want %v", tt.wantErr)
+			}
+			for _, want := range tt.wantErr {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Validate() error = %q, want it to contain %q", err, want)
+				}
+			}
+		})
+	}
+}

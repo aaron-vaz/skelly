@@ -42,10 +42,8 @@ func (p *Processor) CreateTemplate(dir string) (*ProjectTemplate, error) {
 		return nil, fmt.Errorf("invalid %s: %w", TemplateConfigName, err)
 	}
 
-	for _, pattern := range config.Raw {
-		if _, err := path.Match(pattern, ""); err != nil {
-			return nil, fmt.Errorf("invalid raw pattern %q in %s: %w", pattern, TemplateConfigName, err)
-		}
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", TemplateConfigName, err)
 	}
 
 	return &config, nil
