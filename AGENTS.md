@@ -6,7 +6,7 @@ Guidelines for agentic coding agents working in this repository.
 
 `skelly` is a Go CLI tool for scaffolding new projects from templates. It uses go-getter to fetch templates and Go's text/template engine for templating.
 
-- **Language**: Go 1.24
+- **Language**: Go 1.26
 - **Binary**: `skelly`
 - **Module**: `github.com/aaron-vaz/skelly`
 
