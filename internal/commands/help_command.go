@@ -43,13 +43,21 @@ func (c *HelpCommand) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("unknown command: %s", cmdName)
 	}
 
+	cmd, path, rest := Resolve(cmd, args[1:])
+	if group, ok := cmd.(*Group); ok {
+		return group.Run(ctx, rest)
+	}
+	if len(rest) > 0 {
+		return fmt.Errorf("unknown command: %s %s", path, rest[0])
+	}
+
 	var defaults strings.Builder
 	flags := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
 	flags.SetOutput(&defaults)
 	cmd.Init(flags)
 	flags.PrintDefaults()
 
-	return c.ui.RenderInfo(fmt.Sprintf("Usage: skelly %s [options]\n\n%s\n\nOPTIONS:\n%s", cmd.Name(), cmd.Description(), defaults.String()))
+	return c.ui.RenderInfo(fmt.Sprintf("Usage: skelly %s [options]\n\n%s\n\nOPTIONS:\n%s", path, cmd.Description(), defaults.String()))
 }
 
 func (c *HelpCommand) usage() string {

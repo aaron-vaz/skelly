@@ -37,6 +37,13 @@ func TestHelpCommand_Run(t *testing.T) {
 				flags.String("foo", "", "dummy flag")
 			},
 		},
+		"group": NewGroup("group", "A group", &mockUI{}, &mockCommand{
+			name:        "sub",
+			description: "A subcommand",
+			initFunc: func(flags *flag.FlagSet) {
+				flags.Bool("bar", false, "sub flag")
+			},
+		}),
 	}
 
 	tests := []struct {
@@ -62,6 +69,11 @@ func TestHelpCommand_Run(t *testing.T) {
 			args:     []string{"unknown"},
 			wantErr:  true,
 			wantText: "USAGE:",
+		},
+		{
+			name:     "subcommand shows its own help",
+			args:     []string{"group", "sub"},
+			wantText: "Usage: skelly group sub [options]",
 		},
 	}
 
@@ -90,6 +102,26 @@ func TestHelpCommand_Run(t *testing.T) {
 				t.Errorf("Expected output containing %q, got %v", tt.wantText, ui.infoMsgs)
 			}
 		})
+	}
+}
+
+func TestHelpCommand_Run_Group(t *testing.T) {
+	// Given
+	ui := &mockUI{}
+	cmds := map[string]Command{"group": NewGroup("group", "A group", ui, &mockCommand{name: "sub", description: "A subcommand"})}
+	cmd := NewHelpCommand(cmds, &mockUI{})
+
+	// When
+	err := cmd.Run(context.Background(), []string{"group"})
+
+	// Then
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	// And the group's usage lists its subcommands
+	if len(ui.infoMsgs) != 1 || !strings.Contains(ui.infoMsgs[0], "sub         A subcommand") {
+		t.Errorf("Expected group usage, got %v", ui.infoMsgs)
 	}
 }
 

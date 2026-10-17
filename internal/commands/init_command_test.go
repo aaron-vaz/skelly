@@ -9,14 +9,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aaron-vaz/skelly/internal/config"
 	"github.com/aaron-vaz/skelly/internal/templates"
 )
 
 type mockDownloader struct {
-	err error
+	err    error
+	source string
 }
 
 func (m *mockDownloader) Get(ctx context.Context, source string, destination string) error {
+	m.source = source
 	if m.err != nil {
 		return m.err
 	}
@@ -157,7 +160,7 @@ func TestInitCommand_Run(t *testing.T) {
 			}
 
 			ui := &mockUIInit{returns: mockUIReturns{questionAnswer: tt.answer}}
-			cmd := NewInitCommand(proc, tt.downloader, ui)
+			cmd := NewInitCommand(proc, tt.downloader, &mockStore{}, ui)
 			flags := flag.NewFlagSet("init", flag.ContinueOnError)
 			cmd.Init(flags)
 			if err := flags.Parse(tt.flags(dest)); err != nil {
@@ -213,7 +216,7 @@ func TestInitCommand_Run_RefusesToOverwriteHome(t *testing.T) {
 			_ = os.WriteFile(filepath.Join(home, "precious.txt"), []byte("data"), 0644)
 
 			ui := &mockUIInit{returns: mockUIReturns{questionAnswer: "y"}}
-			cmd := NewInitCommand(templates.NewTemplateProcessor(templates.NewRendererService()), &mockDownloader{}, ui)
+			cmd := NewInitCommand(templates.NewTemplateProcessor(templates.NewRendererService()), &mockDownloader{}, &mockStore{}, ui)
 			flags := flag.NewFlagSet("init", flag.ContinueOnError)
 			cmd.Init(flags)
 			_ = flags.Parse([]string{"-src", "http://example.com/t", "-dst", tt.dest(t, home)})
@@ -229,6 +232,56 @@ func TestInitCommand_Run_RefusesToOverwriteHome(t *testing.T) {
 			// And
 			if _, err := os.Stat(filepath.Join(home, "precious.txt")); err != nil {
 				t.Errorf("Expected home directory contents to be untouched: %v", err)
+			}
+		})
+	}
+}
+
+func TestInitCommand_Run_ResolvesSource(t *testing.T) {
+	store := &mockStore{cfg: config.Config{Sources: map[string]config.Source{
+		"go": {URL: "github.com/user/go-template"},
+	}}}
+
+	tests := []struct {
+		name       string
+		source     string
+		store      *mockStore
+		wantSource string
+		wantErr    string
+	}{
+		{name: "registered alias is replaced by its source", source: "go", store: store, wantSource: "github.com/user/go-template"},
+		{name: "unregistered word is used as-is", source: "java", store: store, wantSource: "java"},
+		{name: "url skips the config entirely", source: "github.com/user/t", store: &mockStore{loadErr: errors.New("broken")}, wantSource: "github.com/user/t"},
+		{name: "config error is reported for an alias", source: "go", store: &mockStore{loadErr: errors.New("broken")}, wantErr: "broken"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			downloader := &mockDownloader{}
+			ui := &mockUIInit{}
+			cmd := NewInitCommand(templates.NewTemplateProcessor(templates.NewRendererService()), downloader, tt.store, ui)
+			flags := flag.NewFlagSet("init", flag.ContinueOnError)
+			cmd.Init(flags)
+			_ = flags.Parse([]string{"-dst", filepath.Join(t.TempDir(), "dest")})
+
+			// When
+			err := cmd.Run(context.Background(), []string{tt.source})
+
+			// Then
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Run() error = %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Run() unexpected error: %v", err)
+			}
+
+			// And
+			if downloader.source != tt.wantSource {
+				t.Errorf("downloaded %q, want %q", downloader.source, tt.wantSource)
 			}
 		})
 	}

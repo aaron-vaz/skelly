@@ -58,6 +58,36 @@ skelly init github.com/user/template -dst ./my-new-app
 
 The template is downloaded and rendered in a temporary directory first, so a failed download or render never touches the destination. If the destination already contains files, `skelly` asks before replacing them.
 
+### Registering template sources
+
+Templates you use often can be registered under a short alias, so you don't have to type the full source every time:
+
+```bash
+# Register a source under an alias (local paths are stored as absolute paths)
+skelly sources add go github.com/user/go-template
+
+# Then pass the alias to init instead of the source
+skelly init go -dst ./my-new-app
+
+# List and remove registered sources
+skelly sources list
+skelly sources remove go
+
+# Replace the source of an existing alias
+skelly sources add -force go github.com/user/other-go-template
+```
+
+Aliases may contain letters, digits, `-` and `_`, so they never look like a URL or a path. If a local directory has the same name as an alias, pass it as `./name` to use the directory instead.
+
+Registered sources are stored in a YAML config file, `$XDG_CONFIG_HOME/skelly/config.yml` (`~/.config/skelly/config.yml` by default). Set `SKELLY_CONFIG` to use a different file.
+
+```yaml
+# ~/.config/skelly/config.yml
+sources:
+  go:
+    url: github.com/user/go-template
+```
+
 ### Writing templates
 
 A template is any directory (or repository) containing a `.skelly.yml` file. File contents **and** file/directory names are rendered with Go's [`text/template`](https://pkg.go.dev/text/template):

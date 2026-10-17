@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aaron-vaz/skelly/internal/config"
 	"github.com/aaron-vaz/skelly/internal/download"
 	"github.com/aaron-vaz/skelly/internal/templates"
 	"github.com/aaron-vaz/skelly/internal/view"
@@ -33,6 +34,7 @@ type InitOptions struct {
 type InitCommand struct {
 	processor  *templates.Processor
 	downloader download.Downloader
+	store      config.Store
 	ui         view.UI
 	options    InitOptions
 }
@@ -49,7 +51,7 @@ func (c *InitCommand) Description() string {
 
 // Init binds the required configuration flags to the InitCommand's options.
 func (c *InitCommand) Init(flags *flag.FlagSet) {
-	flags.StringVar(&c.options.source, "src", "", "URL to template that will be used to init the new project (required, may also be given as the first argument)")
+	flags.StringVar(&c.options.source, "src", "", "URL, path or registered alias of the template used to init the new project (required, may also be given as the first argument)")
 	flags.StringVar(&c.options.destination, "dst", defaultDestination, "Destination dir where the project will be initialised to")
 }
 
@@ -59,6 +61,10 @@ func (c *InitCommand) Init(flags *flag.FlagSet) {
 func (c *InitCommand) Run(ctx context.Context, args []string) error {
 	if err := c.resolveOptions(args); err != nil {
 		return fmt.Errorf("invalid options: %w", err)
+	}
+	source, err := c.resolveSource(c.options.source)
+	if err != nil {
+		return err
 	}
 	dest := c.options.destination
 
@@ -79,7 +85,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 
 	downloadCtx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
-	if err := c.downloader.Get(downloadCtx, c.options.source, templateDir); err != nil {
+	if err := c.downloader.Get(downloadCtx, source, templateDir); err != nil {
 		return fmt.Errorf("failed to download template: %w", err)
 	}
 
@@ -144,6 +150,28 @@ func (c *InitCommand) resolveOptions(args []string) error {
 	}
 
 	return nil
+}
+
+// resolveSource swaps a registered alias for its source. Anything else, or
+// an alias-shaped word that is not registered, is returned unchanged.
+func (c *InitCommand) resolveSource(source string) (string, error) {
+	// Only an alias-shaped word can be an alias, so URLs and paths never need the config
+	if !config.IsAlias(source) {
+		return source, nil
+	}
+
+	cfg, err := c.store.Load()
+	if err != nil {
+		return "", err
+	}
+
+	registered, ok := cfg.Sources[source]
+	if !ok {
+		return source, nil
+	}
+
+	_ = c.ui.RenderInfo(fmt.Sprintf("Using template %s from %s", source, config.RedactSource(registered.URL)))
+	return registered.URL, nil
 }
 
 // confirmDestination checks whether dest already has content, and if so asks
@@ -286,11 +314,13 @@ func moveContents(ctx context.Context, src string, dest string) error {
 func NewInitCommand(
 	processor *templates.Processor,
 	downloader download.Downloader,
+	store config.Store,
 	ui view.UI,
 ) Command {
 	return &InitCommand{
 		processor:  processor,
 		downloader: downloader,
+		store:      store,
 		ui:         ui,
 		options:    InitOptions{},
 	}
