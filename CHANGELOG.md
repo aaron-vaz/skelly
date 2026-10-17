@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/aaron-vaz/skelly/compare/v0.3.1...v0.4.0) (2026-10-17)
+
+
+### Features
+
+* add sources command to register template aliases for init ([#20](https://github.com/aaron-vaz/skelly/issues/20)) ([5469c7c](https://github.com/aaron-vaz/skelly/commit/5469c7c2d2f482627077d900da4120bd0723cb8d))
+
 ## [0.3.1](https://github.com/aaron-vaz/skelly/compare/v0.3.0...v0.3.1) (2026-10-16)
 
 
