@@ -32,6 +32,10 @@ func (c *SourcesListCommand) Init(flags *flag.FlagSet) {}
 
 // Run prints every registered alias with its source, sorted by alias.
 func (c *SourcesListCommand) Run(ctx context.Context, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("unexpected arguments: %s", strings.Join(args, " "))
+	}
+
 	cfg, err := c.store.Load()
 	if err != nil {
 		return err
@@ -54,7 +58,7 @@ func (c *SourcesListCommand) Run(ctx context.Context, args []string) error {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "%-*s  %s", width, alias, cfg.Sources[alias].URL)
+		fmt.Fprintf(&b, "%-*s  %s", width, alias, config.RedactSource(cfg.Sources[alias].URL))
 	}
 	return c.ui.RenderInfo(b.String())
 }

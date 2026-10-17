@@ -5,9 +5,11 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -41,22 +43,29 @@ type Config struct {
 
 // FileStore is a Store backed by a YAML file.
 type FileStore struct {
-	path string
+	resolvePath func() (string, error)
 }
 
 // Load reads the config file, treating a missing file as an empty config.
 func (s *FileStore) Load() (*Config, error) {
-	data, err := os.ReadFile(s.path)
+	path, err := s.resolvePath()
+	if err != nil {
+		// Without a config location nothing can have been saved, and commands
+		// that merely consult the config should keep working
+		return &Config{}, nil
+	}
+
+	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return &Config{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config %s: %w", s.path, err)
+		return nil, fmt.Errorf("failed to read config %s: %w", path, err)
 	}
 
 	cfg := &Config{}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config %s: %w", s.path, err)
+		return nil, fmt.Errorf("failed to parse config %s: %w", path, err)
 	}
 	return cfg, nil
 }
@@ -64,12 +73,22 @@ func (s *FileStore) Load() (*Config, error) {
 // Save writes the config file, creating its directory if needed. The file is
 // replaced atomically so an interrupted save cannot leave it half-written.
 func (s *FileStore) Save(cfg *Config) error {
+	path, err := s.resolvePath()
+	if err != nil {
+		return err
+	}
+	// Write through a symlinked config (e.g. one kept in a dotfiles repo)
+	// instead of replacing the link with a regular file
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to encode config: %w", err)
 	}
 
-	dir := filepath.Dir(s.path)
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
@@ -88,7 +107,7 @@ func (s *FileStore) Save(cfg *Config) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
-	if err := os.Rename(tmp.Name(), s.path); err != nil {
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil
@@ -97,7 +116,7 @@ func (s *FileStore) Save(cfg *Config) error {
 // ValidateAlias reports whether alias can be used to name a source. Aliases are
 // plain words so they can never be mistaken for a URL or a path.
 func ValidateAlias(alias string) error {
-	if !aliasPattern.MatchString(alias) {
+	if !IsAlias(alias) {
 		return fmt.Errorf("invalid alias %q: use letters, digits, '-' and '_', starting with a letter or digit", alias)
 	}
 	return nil
@@ -106,6 +125,23 @@ func ValidateAlias(alias string) error {
 // IsAlias reports whether s has the shape of an alias.
 func IsAlias(s string) bool {
 	return aliasPattern.MatchString(s)
+}
+
+// RedactSource hides credentials embedded in a source URL, such as a token in
+// https://token@github.com/org/repo, so the source can be shown safely.
+func RedactSource(source string) string {
+	// go-getter sources may force a getter with a "git::" style prefix
+	prefix, rest := "", source
+	if i := strings.Index(source, "::"); i >= 0 {
+		prefix, rest = source[:i+2], source[i+2:]
+	}
+
+	u, err := url.Parse(rest)
+	if err != nil || u.User == nil {
+		return source
+	}
+	u.User = url.User("REDACTED")
+	return prefix + u.String()
 }
 
 // DefaultPath returns $SKELLY_CONFIG if set, otherwise config.yml under
@@ -127,5 +163,12 @@ func DefaultPath() (string, error) {
 
 // NewFileStore returns a Store that keeps the config in the file at path.
 func NewFileStore(path string) *FileStore {
-	return &FileStore{path: path}
+	return &FileStore{resolvePath: func() (string, error) { return path, nil }}
+}
+
+// NewDefaultFileStore returns a Store that keeps the config at DefaultPath.
+// The path is resolved on each use so commands that never touch the config
+// still work when it cannot be located, e.g. with $HOME unset.
+func NewDefaultFileStore() *FileStore {
+	return &FileStore{resolvePath: DefaultPath}
 }

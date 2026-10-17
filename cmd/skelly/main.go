@@ -22,11 +22,7 @@ func main() {
 }
 
 func run() error {
-	configPath, err := config.DefaultPath()
-	if err != nil {
-		return err
-	}
-	store := config.NewFileStore(configPath)
+	store := config.NewDefaultFileStore()
 
 	downloader := download.NewSmartDownloader(
 		download.NewLocalDownloader(),

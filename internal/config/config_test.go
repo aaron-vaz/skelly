@@ -156,3 +156,80 @@ func TestDefaultPath(t *testing.T) {
 		})
 	}
 }
+
+func TestFileStore_Save_ThroughSymlink(t *testing.T) {
+	// Given a config file that is a symlink, e.g. into a dotfiles repo
+	target := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(target, []byte("sources: {}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	// When
+	err := NewFileStore(link).Save(&Config{Sources: map[string]Source{"go": {URL: "github.com/user/go"}}})
+
+	// Then
+	if err != nil {
+		t.Fatalf("Save() unexpected error: %v", err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("Expected config to remain a symlink, got %v (%v)", info, err)
+	}
+
+	// And the linked file holds the new config
+	data, err := os.ReadFile(target)
+	if err != nil || !strings.Contains(string(data), "github.com/user/go") {
+		t.Errorf("Expected target to be updated, got %q (%v)", data, err)
+	}
+}
+
+func TestDefaultFileStore_NoConfigLocation(t *testing.T) {
+	// Given no way to locate the config file
+	t.Setenv(PathEnv, "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	store := NewDefaultFileStore()
+
+	// When
+	cfg, err := store.Load()
+
+	// Then loading still works so commands that only consult the config run
+	if err != nil || len(cfg.Sources) != 0 {
+		t.Errorf("Load() = %v, %v, want an empty config", cfg, err)
+	}
+
+	// And saving reports why it cannot
+	if err := store.Save(&Config{}); err == nil {
+		t.Error("Save() error = nil, want failure to locate config file")
+	}
+}
+
+func TestRedactSource(t *testing.T) {
+	tests := []struct {
+		source string
+		want   string
+	}{
+		{"github.com/user/tpl", "github.com/user/tpl"},
+		{"/home/u/templates/go", "/home/u/templates/go"},
+		{"git@github.com:org/tpl.git", "git@github.com:org/tpl.git"},
+		{"https://github.com/org/tpl.git", "https://github.com/org/tpl.git"},
+		{"https://ghp_secret@github.com/org/tpl.git", "https://REDACTED@github.com/org/tpl.git"},
+		{"https://user:pass@example.com/tpl.zip", "https://REDACTED@example.com/tpl.zip"},
+		{"git::https://user:token@github.com/org/tpl.git?ref=v1", "git::https://REDACTED@github.com/org/tpl.git?ref=v1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			// When
+			got := RedactSource(tt.source)
+
+			// Then
+			if got != tt.want {
+				t.Errorf("RedactSource(%q) = %q, want %q", tt.source, got, tt.want)
+			}
+		})
+	}
+}

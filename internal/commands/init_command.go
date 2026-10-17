@@ -170,7 +170,7 @@ func (c *InitCommand) resolveSource(source string) (string, error) {
 		return source, nil
 	}
 
-	_ = c.ui.RenderInfo(fmt.Sprintf("Using template %s from %s", source, registered.URL))
+	_ = c.ui.RenderInfo(fmt.Sprintf("Using template %s from %s", source, config.RedactSource(registered.URL)))
 	return registered.URL, nil
 }
 

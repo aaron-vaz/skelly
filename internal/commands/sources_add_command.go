@@ -83,7 +83,7 @@ func (c *SourcesAddCommand) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	return c.ui.RenderInfo(fmt.Sprintf("Registered %s -> %s", alias, source))
+	return c.ui.RenderInfo(fmt.Sprintf("Registered %s -> %s", alias, config.RedactSource(source)))
 }
 
 // NewSourcesAddCommand returns a SourcesAddCommand that saves aliases to store.
