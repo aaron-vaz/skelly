@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
@@ -135,6 +136,10 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, dir string) error {
 
 	// Renames come last, so the template's own names are what Raw and Exclude see
 	if err := p.applyRenames(root, config); err != nil {
+		return err
+	}
+
+	if err := checkNoSkippedDirs(root); err != nil {
 		return err
 	}
 
@@ -471,26 +476,76 @@ func (p *Processor) RemoveTemplateMetadata(dir string) error {
 // touchesSkipped reports whether any element of rel names a directory that is
 // never copied, such as .git. The template's own copy is stripped, so a rendered
 // name or a rename must not be able to bring one back: a .git directory in a
-// generated project is used by git, hooks included. Names are compared without
-// regard to case, as a case-insensitive filesystem treats .GIT as .git.
+// generated project is used by git, hooks included.
 func touchesSkipped(rel string) bool {
-	for _, element := range strings.Split(filepath.ToSlash(rel), "/") {
-		for _, skip := range dirsToSkip {
-			if strings.EqualFold(element, skip) {
-				return true
-			}
+	return slices.ContainsFunc(strings.Split(filepath.ToSlash(rel), "/"), isSkippedName)
+}
+
+// isSkippedName reports whether name would be taken for a skipped directory by
+// the filesystem or by git. Case is ignored, as are trailing dots and spaces,
+// which Windows drops, and characters that macOS ignores when it compares
+// names; a Windows short name such as GIT~1 is the same directory as .git.
+func isSkippedName(name string) bool {
+	normalised := strings.TrimRight(strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Cf, r) {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, name), ". ")
+
+	for _, skip := range dirsToSkip {
+		if normalised == skip {
+			return true
+		}
+		if short := strings.TrimPrefix(skip, "."); strings.HasPrefix(normalised, short+"~") && strings.Trim(normalised[len(short)+1:], "0123456789") == "" && len(normalised) > len(short)+1 {
+			return true
 		}
 	}
 	return false
 }
 
+// removeSkippedDirs deletes every file and directory with a skipped name, at any
+// depth, so a template that carries a nested repository does not pass it on.
 func removeSkippedDirs(root *os.Root) error {
-	for _, skip := range dirsToSkip {
-		if err := root.RemoveAll(skip); err != nil {
-			return fmt.Errorf("error removing path %s: %w", skip, err)
+	var found []string
+	err := fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if rel != "." && isSkippedName(d.Name()) {
+			found = append(found, rel)
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, rel := range found {
+		if err := root.RemoveAll(rel); err != nil {
+			return fmt.Errorf("error removing path %s: %w", rel, err)
 		}
 	}
 	return nil
+}
+
+// checkNoSkippedDirs fails if rendering left a skipped directory behind. The
+// checks on rendered names and renames refuse the obvious ways of creating one,
+// but a symlink in the template can lead a path into a directory that does not
+// exist yet, so the finished project is checked as well.
+func checkNoSkippedDirs(root *os.Root) error {
+	return fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if rel != "." && isSkippedName(d.Name()) {
+			return fmt.Errorf("the project would contain %s, which is never copied from a template (%s)", rel, strings.Join(dirsToSkip, ", "))
+		}
+		return nil
+	})
 }
 
 // matchesAny reports whether rel, its base name, or any of its parent

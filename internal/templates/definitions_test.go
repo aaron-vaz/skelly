@@ -391,3 +391,73 @@ inputs:
 		t.Errorf("owner depends on nothing, got %v", deps["owner"])
 	}
 }
+
+func TestProjectTemplate_Unmarshal_Strict(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		wantErr string
+	}{
+		{name: "a misspelt when must not make an exclusion unconditional", config: "exclude:\n  - path: server\n    wen: '{{false}}'", wantErr: `line 3: unknown key "wen" in exclude (allowed: path, paths, when)`},
+		{name: "a misspelt when must not make a rename unconditional", config: "rename:\n  - from: a\n    to: b\n    wehn: '{{false}}'", wantErr: `unknown key "wehn" in rename (allowed: from, to, when)`},
+		{name: "a blank path next to paths", config: "exclude:\n  - path: ''\n    paths: [server]", wantErr: "exclude path must not be blank"},
+		{name: "empty paths next to a path", config: "exclude:\n  - path: a\n    paths: []", wantErr: "exclude paths must not be blank"},
+		{name: "an entry that is not a mapping", config: "exclude:\n  - server", wantErr: "each exclude entry must be a mapping"},
+		{name: "a rename that is not a mapping", config: "rename:\n  - a", wantErr: "each rename entry must be a mapping"},
+		{name: "known keys are accepted", config: "exclude:\n  - paths: [a]\n    when: 'true'\nrename:\n  - from: a\n    to: b\n    when: 'true'"},
+		{name: "other top-level keys are still free for authors to add", config: "name: x\nversion: 2\nauthor: me"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// When
+			var config ProjectTemplate
+			err := yaml.Unmarshal([]byte(tt.config), &config)
+
+			// Then
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("Unmarshal() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Unmarshal() error = %v, want error containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestIsSkippedName(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{".git", true},
+		{".GIT", true},
+		{".Git", true},
+		{".git ", true},
+		{".git.", true},
+		{".git. .", true},
+		{".g\u200bit", true},
+		{".git\ufeff", true},
+		{"GIT~1", true},
+		{"git~12", true},
+		{".gitignore", false},
+		{".gitattributes", false},
+		{".github", false},
+		{"git", false},
+		{"git~", false},
+		{"git~x", false},
+		{"gitx~1", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isSkippedName(tt.name); got != tt.want {
+				t.Errorf("isSkippedName(%q) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}

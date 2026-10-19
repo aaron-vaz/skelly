@@ -925,3 +925,87 @@ func TestProcessor_ApplyTemplate_NeverRecreatesGitDir(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessor_ApplyTemplate_SymlinkCannotRecreateGitDir(t *testing.T) {
+	tests := []struct {
+		name       string
+		config     ProjectTemplate
+		files      map[string]string
+		failsEarly bool
+	}{
+		{
+			name:   "a rename through a symlink that leads to .git",
+			config: ProjectTemplate{Rename: []Renaming{{From: "hook", To: "g/hooks/pre-commit"}}},
+			files:  map[string]string{"hook": "#!/bin/sh"},
+		},
+		{
+			name:   "a rendered file name through a symlink that leads to .git",
+			config: ProjectTemplate{Env: map[string]any{"d": "g/hooks/pre-commit"}},
+			files:  map[string]string{"{{.Env.d}}": "#!/bin/sh"},
+		},
+		{
+			name:       "a rendered directory name through the same symlink fails before writing anything",
+			config:     ProjectTemplate{Env: map[string]any{"d": "g/hooks"}},
+			files:      map[string]string{"{{.Env.d}}/pre-commit": "#!/bin/sh"},
+			failsEarly: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given a symlink named g that points at .git, which is removed first and so dangles
+			dest := t.TempDir()
+			_ = os.WriteFile(filepath.Join(dest, TemplateConfigName), []byte(""), 0644)
+			_ = os.MkdirAll(filepath.Join(dest, ".git"), 0755)
+			if err := os.Symlink(".git", filepath.Join(dest, "g")); err != nil {
+				t.Skipf("symlinks are not available: %v", err)
+			}
+			for rel, content := range tt.files {
+				full := filepath.Join(dest, filepath.FromSlash(rel))
+				_ = os.MkdirAll(filepath.Dir(full), 0755)
+				_ = os.WriteFile(full, []byte(content), 0644)
+			}
+
+			// When
+			err := NewTemplateProcessor(NewRendererService()).ApplyTemplate(tt.config, dest)
+
+			// Then
+			if err == nil {
+				t.Fatal("ApplyTemplate() succeeded, want a refusal")
+			}
+			if !tt.failsEarly && !strings.Contains(err.Error(), "which is never copied from a template") {
+				t.Errorf("ApplyTemplate() error = %v, want a refusal", err)
+			}
+		})
+	}
+}
+
+func TestProcessor_ApplyTemplate_NestedGitIsNotCopied(t *testing.T) {
+	// Given templates that carry nested repositories, such as a vendored checkout
+	dest := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dest, TemplateConfigName), []byte(""), 0644)
+	for _, rel := range []string{".git/HEAD", "vendor/lib/.git/hooks/pre-commit", "vendor/lib/main.go", "other/.GIT/config", "ok/.github/ci.yml", "ok/.gitignore"} {
+		full := filepath.Join(dest, filepath.FromSlash(rel))
+		_ = os.MkdirAll(filepath.Dir(full), 0755)
+		_ = os.WriteFile(full, []byte("x"), 0644)
+	}
+	_ = os.WriteFile(filepath.Join(dest, "vendor", "sub.git"), []byte("gitdir: ../x"), 0644)
+
+	// When
+	err := NewTemplateProcessor(NewRendererService()).ApplyTemplate(ProjectTemplate{}, dest)
+
+	// Then
+	if err != nil {
+		t.Fatalf("ApplyTemplate() error = %v", err)
+	}
+	for _, rel := range []string{".git", "vendor/lib/.git", "other/.GIT"} {
+		if _, err := os.Stat(filepath.Join(dest, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Errorf("Expected %s to be removed, stat err = %v", rel, err)
+		}
+	}
+	for _, rel := range []string{"vendor/lib/main.go", "ok/.github/ci.yml", "ok/.gitignore", "vendor/sub.git"} {
+		if _, err := os.Stat(filepath.Join(dest, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("Expected %s to be kept: %v", rel, err)
+		}
+	}
+}

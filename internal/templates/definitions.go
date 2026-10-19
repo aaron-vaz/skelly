@@ -12,6 +12,7 @@ import (
 	"text/template/parse"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"gopkg.in/yaml.v3"
 )
 
 // Input defines interactive user fields typically consumed via CLI dialog.
@@ -38,6 +39,20 @@ type Exclusion struct {
 	// When is rendered as a template and must produce "true" or "false". Without
 	// it the paths are always excluded, as for the template's own files.
 	When string `yaml:"when,omitempty"`
+}
+
+// UnmarshalYAML reads an exclusion and rejects keys it does not know. Without a
+// when an exclusion always applies, so a misspelt when ("wen") must not be
+// ignored and quietly turn a conditional exclusion into an unconditional one.
+func (e *Exclusion) UnmarshalYAML(node *yaml.Node) error {
+	if err := checkKeys(node, "exclude", "path", "paths", "when"); err != nil {
+		return err
+	}
+	type plain Exclusion
+	if err := node.Decode((*plain)(e)); err != nil {
+		return err
+	}
+	return checkNotBlank(node, "exclude", map[string]bool{"path": e.Path == "", "paths": len(e.Paths) == 0})
 }
 
 // Patterns returns every glob of the exclusion, whether it was written as
@@ -71,6 +86,41 @@ type Renaming struct {
 	// When is rendered as a template and must produce "true" or "false". The
 	// rename is skipped when it is false; empty means always.
 	When string `yaml:"when,omitempty"`
+}
+
+// UnmarshalYAML reads a rename and rejects keys it does not know, for the same
+// reason as for an exclusion.
+func (r *Renaming) UnmarshalYAML(node *yaml.Node) error {
+	if err := checkKeys(node, "rename", "from", "to", "when"); err != nil {
+		return err
+	}
+	type plain Renaming
+	return node.Decode((*plain)(r))
+}
+
+// checkKeys rejects a mapping that has a key other than the allowed ones.
+func checkKeys(node *yaml.Node, what string, allowed ...string) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("line %d: each %s entry must be a mapping with the keys %s", node.Line, what, strings.Join(allowed, ", "))
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if !slices.Contains(allowed, key.Value) {
+			return fmt.Errorf("line %d: unknown key %q in %s (allowed: %s)", key.Line, key.Value, what, strings.Join(allowed, ", "))
+		}
+	}
+	return nil
+}
+
+// checkNotBlank rejects a key that is written but empty, such as path: "" or
+// paths: [], which would otherwise read the same as leaving it out.
+func checkNotBlank(node *yaml.Node, what string, blank map[string]bool) error {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if key := node.Content[i].Value; blank[key] {
+			return fmt.Errorf("line %d: %s %s must not be blank", node.Content[i].Line, what, key)
+		}
+	}
+	return nil
 }
 
 // ProjectTemplate delineates the configuration manifest defining how a template generates.
@@ -406,10 +456,10 @@ func (t ProjectTemplate) validateRenames() []error {
 		}
 
 		// Two renames may share a target when their conditions keep one of them out
-		if rename.When == "" && targets[to] {
-			errs = append(errs, fmt.Errorf("rename %q: more than one rename ends up at %q", rename.From, rename.To))
-		}
-		if rename.When == "" {
+		if strings.TrimSpace(rename.When) == "" {
+			if targets[to] {
+				errs = append(errs, fmt.Errorf("rename %q: more than one rename ends up at %q", rename.From, rename.To))
+			}
 			targets[to] = true
 		}
 	}

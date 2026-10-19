@@ -993,3 +993,96 @@ func TestIntegration_TypedSetAnswers(t *testing.T) {
 		})
 	}
 }
+
+func TestIntegration_SymlinkCannotRecreateGitDir(t *testing.T) {
+	// Given a template whose symlink g points at .git, which is never copied and so dangles
+	srcDir := writeTemplate(t, map[string]string{
+		".skelly.yml": "rename:\n  - from: hook\n    to: g/hooks/pre-commit\n",
+		"hook":        "#!/bin/sh\necho pwned\n",
+	})
+	if err := os.Symlink(".git", filepath.Join(srcDir, "g")); err != nil {
+		t.Skipf("symlinks are not available: %v", err)
+	}
+	destDir := filepath.Join(t.TempDir(), "dest")
+
+	// When
+	res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input")
+
+	// Then
+	if res.err == nil || !strings.Contains(res.stderr, "never copied") {
+		t.Errorf("Expected a refusal, got %v: %s", res.err, res.stderr)
+	}
+	assertAbsent(t, destDir)
+}
+
+func TestIntegration_NestedGitIsNotCopied(t *testing.T) {
+	// Given a template that carries a nested repository
+	srcDir := writeTemplate(t, map[string]string{
+		"vendor/lib/.git/hooks/pre-commit": "#!/bin/sh\n",
+		"vendor/lib/main.go":               "package lib",
+		"docs/.gitignore":                  "build/",
+	})
+	destDir := filepath.Join(t.TempDir(), "dest")
+
+	// When
+	res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir)
+
+	// Then
+	if res.err != nil {
+		t.Fatalf("init failed: %v\n%s%s", res.err, res.stdout, res.stderr)
+	}
+	assertExists(t, destDir, "vendor/lib/main.go", "docs/.gitignore")
+	assertAbsent(t, destDir, "vendor/lib/.git")
+}
+
+func TestIntegration_MisspeltKeysAreRejected(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+		want   string
+	}{
+		{name: "exclude", config: "exclude:\n  - path: server\n    wen: '{{false}}'\n", want: `unknown key "wen" in exclude`},
+		{name: "rename", config: "rename:\n  - from: server\n    to: app\n    wen: '{{false}}'\n", want: `unknown key "wen" in rename`},
+		{name: "blank path", config: "exclude:\n  - path: ''\n    paths: [server]\n", want: "exclude path must not be blank"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			srcDir := writeTemplate(t, map[string]string{".skelly.yml": tt.config, "server/main.go": "package main"})
+			destDir := filepath.Join(t.TempDir(), "dest")
+
+			// When
+			res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input")
+
+			// Then
+			if res.err == nil || !strings.Contains(res.stderr, tt.want) {
+				t.Errorf("Expected %q, got %v: %s", tt.want, res.err, res.stderr)
+			}
+			assertAbsent(t, destDir)
+		})
+	}
+}
+
+func TestIntegration_NumbersMustBeFinite(t *testing.T) {
+	// Given a number input
+	srcDir := writeTemplate(t, map[string]string{
+		".skelly.yml": "inputs:\n  ratio: {default: 1.5}\n",
+		"out.txt":     "{{.Inputs.ratio.Value}}",
+	})
+
+	for _, value := range []string{"NaN", "Inf", "-Inf", "1e400", "half"} {
+		t.Run(value, func(t *testing.T) {
+			destDir := filepath.Join(t.TempDir(), "dest")
+
+			// When
+			res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input", "-json", "-set", "ratio="+value)
+
+			// Then it fails before anything is created, so a program never sees an error for a project that exists
+			if res.err == nil || !strings.Contains(res.stderr, `input "ratio" must be a number`) {
+				t.Errorf("Expected a number error, got %v: %s", res.err, res.stderr)
+			}
+			assertAbsent(t, destDir)
+		})
+	}
+}

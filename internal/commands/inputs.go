@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -143,7 +144,7 @@ func typedAnswer(name string, def any, answer string) (any, error) {
 		return value, nil
 	case float64:
 		value, err := strconv.ParseFloat(answer, 64)
-		if err != nil {
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 			return nil, fmt.Errorf("input %q must be a number", name)
 		}
 		return value, nil

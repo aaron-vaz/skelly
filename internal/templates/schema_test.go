@@ -139,6 +139,10 @@ func TestSchema_AgreesWithValidate(t *testing.T) {
 		{name: "valid exclude path", config: "exclude:\n  - path: a\n    when: 'true'"},
 		{name: "valid exclude paths", config: "exclude:\n  - paths: [a, '**/b']\n    when: 'true'"},
 		{name: "exclude without a path", config: "exclude:\n  - when: 'true'"},
+		{name: "exclude with a blank path next to paths", config: "exclude:\n  - path: ''\n    paths: [a]"},
+		{name: "exclude with a path and empty paths", config: "exclude:\n  - path: a\n    paths: []"},
+		{name: "exclude with an unknown key", config: "exclude:\n  - path: a\n    wen: 'false'"},
+		{name: "rename with an unknown key", config: "rename:\n  - from: a\n    to: b\n    wen: 'false'"},
 		{name: "exclude with empty paths", config: "exclude:\n  - paths: []\n    when: 'true'"},
 		{name: "exclude with blank path", config: "exclude:\n  - paths: ['']\n    when: 'true'"},
 		{name: "exclude without when", config: "exclude:\n  - path: a"},
@@ -156,13 +160,14 @@ func TestSchema_AgreesWithValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Given
 			var config ProjectTemplate
-			if err := yaml.Unmarshal([]byte(tt.config), &config); err != nil {
-				t.Fatalf("failed to parse config: %v", err)
-			}
+			parseErr := yaml.Unmarshal([]byte(tt.config), &config)
 
 			// When
 			schemaErr := validateAgainstSchema(schema, tt.config)
-			goErr := config.Validate()
+			goErr := parseErr
+			if goErr == nil {
+				goErr = config.Validate()
+			}
 
 			// Then
 			if (schemaErr == nil) != (goErr == nil) {
