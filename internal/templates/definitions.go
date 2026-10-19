@@ -3,6 +3,8 @@ package templates
 import (
 	"errors"
 	"fmt"
+	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -44,6 +46,19 @@ func (e Exclusion) label() string {
 	return strings.Join(e.Patterns(), ", ")
 }
 
+// Renaming moves a path of the template to another place once the project has
+// been rendered, e.g. to ship "github" and generate ".github", so that files
+// meant for generated projects, such as CI workflows, stay inert in the
+// template's own repository.
+type Renaming struct {
+	// From is the path in the template, as it is named there. Exclude and Raw
+	// patterns also refer to the template's own names, before any renaming.
+	From string `yaml:"from"`
+	// To is the path in the generated project. It must not exist yet; missing
+	// parent directories are created.
+	To string `yaml:"to"`
+}
+
 // ProjectTemplate delineates the configuration manifest defining how a template generates.
 type ProjectTemplate struct {
 	Name        string           `yaml:"name"`
@@ -59,6 +74,8 @@ type ProjectTemplate struct {
 	// rendering, whenever their condition renders as true. Unlike Raw it also
 	// applies to raw files.
 	Exclude []Exclusion `yaml:"exclude,omitempty"`
+	// Rename moves paths after everything has been rendered, in the order listed.
+	Rename []Renaming `yaml:"rename,omitempty"`
 }
 
 // Validate reports every problem in the config at once, so a template author
@@ -108,7 +125,45 @@ func (t ProjectTemplate) Validate() error {
 		}
 	}
 
+	errs = append(errs, t.validateRenames()...)
+
 	return errors.Join(errs...)
+}
+
+// validateRenames checks that every rename stays inside the project and that
+// no two renames end up at the same place.
+func (t ProjectTemplate) validateRenames() []error {
+	var errs []error
+	targets := make(map[string]bool, len(t.Rename))
+
+	for _, rename := range t.Rename {
+		from, to := cleanPath(rename.From), cleanPath(rename.To)
+		switch {
+		case strings.TrimSpace(rename.From) == "" || strings.TrimSpace(rename.To) == "":
+			errs = append(errs, errors.New("rename needs both from and to"))
+			continue
+		case !filepath.IsLocal(from) || !filepath.IsLocal(to):
+			errs = append(errs, fmt.Errorf("rename %q to %q: paths must be relative and stay inside the project", rename.From, rename.To))
+			continue
+		case from == to:
+			errs = append(errs, fmt.Errorf("rename %q: from and to are the same", rename.From))
+			continue
+		case from == TemplateConfigName:
+			errs = append(errs, fmt.Errorf("rename %q: the config file is never copied", rename.From))
+			continue
+		}
+
+		if targets[to] {
+			errs = append(errs, fmt.Errorf("rename %q: more than one rename ends up at %q", rename.From, rename.To))
+		}
+		targets[to] = true
+	}
+	return errs
+}
+
+// cleanPath normalises a slash separated path from the config.
+func cleanPath(p string) string {
+	return path.Clean(strings.TrimSpace(p))
 }
 
 // validateChoices rejects a default that the user could not have typed in.

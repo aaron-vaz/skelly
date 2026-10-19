@@ -92,6 +92,45 @@ exclude:
 			wantErr: []string{"exclude path must not be blank", `invalid exclude pattern "[unclosed"`, `exclude "docs": when must not be blank`},
 		},
 		{
+			name: "valid rename",
+			config: `
+rename:
+  - from: github
+    to: .github
+  - from: gitignore
+    to: config/.gitignore`,
+		},
+		{
+			name: "invalid renames",
+			config: `
+rename:
+  - from: a
+  - to: b
+  - from: ../outside
+    to: b
+  - from: c
+    to: /abs
+  - from: d
+    to: d
+  - from: ./e
+    to: e
+  - from: .skelly.yml
+    to: x
+  - from: f
+    to: dup
+  - from: g
+    to: ./dup`,
+			wantErr: []string{
+				"rename needs both from and to",
+				`rename "../outside" to "b": paths must be relative and stay inside the project`,
+				`rename "c" to "/abs": paths must be relative and stay inside the project`,
+				`rename "d": from and to are the same`,
+				`rename "./e": from and to are the same`,
+				`rename ".skelly.yml": the config file is never copied`,
+				`rename "g": more than one rename ends up at "./dup"`,
+			},
+		},
+		{
 			name:   "recursive raw pattern",
 			config: `raw: ["**/*.tpl"]`,
 		},

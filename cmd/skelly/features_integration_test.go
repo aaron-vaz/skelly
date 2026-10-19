@@ -630,3 +630,123 @@ func mustAbs(t *testing.T, path string) string {
 	}
 	return abs
 }
+
+func TestIntegration_Rename(t *testing.T) {
+	config := `
+inputs:
+  name: {description: Project name}
+raw: [github]
+exclude:
+  - path: github/workflows/docker.yml
+    when: "true"
+rename:
+  - from: github
+    to: .github
+  - from: gitignore
+    to: .gitignore
+`
+	files := func() map[string]string {
+		return map[string]string{
+			".skelly.yml":                 config,
+			"main.go":                     "package {{.Inputs.name.Value}}",
+			"github/workflows/ci.yml":     "sha: ${{ github.sha }}",
+			"github/workflows/docker.yml": "gone",
+			"github/dependabot.yml":       "version: 2",
+			"gitignore":                   "build/",
+		}
+	}
+
+	t.Run("moves paths after rendering and leaves raw files untouched", func(t *testing.T) {
+		// Given
+		srcDir := writeTemplate(t, files())
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input", "-set", "name=demo")
+
+		// Then
+		if res.err != nil {
+			t.Fatalf("init failed: %v\n%s%s", res.err, res.stdout, res.stderr)
+		}
+		assertContent(t, filepath.Join(destDir, ".github", "workflows", "ci.yml"), "sha: ${{ github.sha }}")
+		assertContent(t, filepath.Join(destDir, ".github", "dependabot.yml"), "version: 2")
+		assertContent(t, filepath.Join(destDir, ".gitignore"), "build/")
+		assertContent(t, filepath.Join(destDir, "main.go"), "package demo")
+		assertAbsent(t, destDir, "github", "gitignore", ".github/workflows/docker.yml", ".skelly.yml")
+	})
+
+	t.Run("inspect lists the renames", func(t *testing.T) {
+		// Given
+		srcDir := writeTemplate(t, files())
+
+		// When
+		res := runSkelly(t, "", nil, "inspect", srcDir)
+
+		// Then
+		var got struct {
+			Rename []struct{ From, To string }
+		}
+		if res.err != nil || json.Unmarshal([]byte(res.stdout), &got) != nil {
+			t.Fatalf("inspect failed: %v\n%s%s", res.err, res.stdout, res.stderr)
+		}
+		if len(got.Rename) != 2 || got.Rename[0].From != "github" || got.Rename[0].To != ".github" {
+			t.Errorf("rename = %+v", got.Rename)
+		}
+	})
+
+	t.Run("a missing source fails and creates nothing", func(t *testing.T) {
+		// Given
+		srcDir := writeTemplate(t, map[string]string{
+			".skelly.yml": "rename:\n  - from: nope\n    to: somewhere\n",
+			"a.txt":       "x",
+		})
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input")
+
+		// Then
+		if res.err == nil || !strings.Contains(res.stderr, `rename "nope": no such file or directory in the template`) {
+			t.Errorf("Expected a missing source error, got %v: %s", res.err, res.stderr)
+		}
+		assertAbsent(t, destDir)
+	})
+
+	t.Run("a target that already exists fails and creates nothing", func(t *testing.T) {
+		// Given
+		srcDir := writeTemplate(t, map[string]string{
+			".skelly.yml": "rename:\n  - from: a.txt\n    to: b.txt\n",
+			"a.txt":       "a",
+			"b.txt":       "b",
+		})
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input")
+
+		// Then
+		if res.err == nil || !strings.Contains(res.stderr, "b.txt already exists") {
+			t.Errorf("Expected a clash error, got %v: %s", res.err, res.stderr)
+		}
+		assertAbsent(t, destDir)
+	})
+
+	t.Run("a path that leaves the project is rejected when the template is loaded", func(t *testing.T) {
+		// Given
+		srcDir := writeTemplate(t, map[string]string{
+			".skelly.yml": "rename:\n  - from: a.txt\n    to: ../escaped.txt\n",
+			"a.txt":       "a",
+		})
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input")
+
+		// Then
+		if res.err == nil || !strings.Contains(res.stderr, "paths must be relative and stay inside the project") {
+			t.Errorf("Expected an escape error, got %v: %s", res.err, res.stderr)
+		}
+		assertAbsent(t, destDir)
+		assertAbsent(t, filepath.Dir(destDir), "escaped.txt")
+	})
+}

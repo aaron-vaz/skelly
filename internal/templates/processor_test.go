@@ -507,3 +507,120 @@ func TestProcessor_RemoveTemplateMetadata(t *testing.T) {
 		t.Errorf("Expected other files to be kept: %v", err)
 	}
 }
+
+func TestProcessor_ApplyTemplate_Rename(t *testing.T) {
+	tests := []struct {
+		name    string
+		rename  []Renaming
+		raw     []string
+		exclude []Exclusion
+		files   map[string]string
+		want    map[string]string
+		absent  []string
+		wantErr string
+	}{
+		{
+			name:   "directory is moved with its contents",
+			rename: []Renaming{{From: "github", To: ".github"}},
+			files:  map[string]string{"github/workflows/ci.yml": "a", "github/dependabot.yml": "b", "main.go": "c"},
+			want:   map[string]string{".github/workflows/ci.yml": "a", ".github/dependabot.yml": "b", "main.go": "c"},
+			absent: []string{"github"},
+		},
+		{
+			name:   "file is moved and missing parent directories are created",
+			rename: []Renaming{{From: "gitignore", To: "config/.gitignore"}},
+			files:  map[string]string{"gitignore": "build/"},
+			want:   map[string]string{"config/.gitignore": "build/"},
+			absent: []string{"gitignore"},
+		},
+		{
+			name:    "raw and exclude refer to the template's own names",
+			rename:  []Renaming{{From: "github", To: ".github"}},
+			raw:     []string{"github"},
+			exclude: []Exclusion{{Path: "github/workflows/docker.yml", When: "true"}},
+			files: map[string]string{
+				"github/workflows/ci.yml":     "sha: ${{ github.sha }}",
+				"github/workflows/docker.yml": "gone",
+			},
+			want:   map[string]string{".github/workflows/ci.yml": "sha: ${{ github.sha }}"},
+			absent: []string{".github/workflows/docker.yml"},
+		},
+		{
+			name:   "contents and names are rendered before the move",
+			rename: []Renaming{{From: "src", To: "app"}},
+			files:  map[string]string{"src/{{.Inputs.kind.Value}}.txt": "kind is {{.Inputs.kind.Value}}"},
+			want:   map[string]string{"app/cli.txt": "kind is cli"},
+		},
+		{
+			name:   "renames apply in order, so a later one can use an earlier result",
+			rename: []Renaming{{From: "a", To: "b"}, {From: "b/x.txt", To: "c.txt"}},
+			files:  map[string]string{"a/x.txt": "x"},
+			want:   map[string]string{"c.txt": "x"},
+		},
+		{
+			name:    "missing source is an error",
+			rename:  []Renaming{{From: "nope", To: "somewhere"}},
+			files:   map[string]string{"a.txt": "x"},
+			wantErr: `rename "nope": no such file or directory in the template`,
+		},
+		{
+			name:    "existing target is an error",
+			rename:  []Renaming{{From: "a.txt", To: "b.txt"}},
+			files:   map[string]string{"a.txt": "a", "b.txt": "b"},
+			wantErr: `rename "a.txt" to "b.txt": b.txt already exists`,
+		},
+		{
+			name:    "an excluded source can no longer be renamed",
+			rename:  []Renaming{{From: "a.txt", To: "b.txt"}},
+			exclude: []Exclusion{{Path: "a.txt", When: "true"}},
+			files:   map[string]string{"a.txt": "a"},
+			wantErr: `rename "a.txt": no such file or directory in the template`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			cfg := ProjectTemplate{
+				Inputs:  map[string]Input{"kind": {Value: "cli"}},
+				Rename:  tt.rename,
+				Raw:     tt.raw,
+				Exclude: tt.exclude,
+			}
+			dest := t.TempDir()
+			_ = os.WriteFile(filepath.Join(dest, TemplateConfigName), []byte(""), 0644)
+			for rel, content := range tt.files {
+				full := filepath.Join(dest, filepath.FromSlash(rel))
+				_ = os.MkdirAll(filepath.Dir(full), 0755)
+				_ = os.WriteFile(full, []byte(content), 0644)
+			}
+
+			// When
+			err := NewTemplateProcessor(NewRendererService()).ApplyTemplate(cfg, dest)
+
+			// Then
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("ApplyTemplate() error = %v, want error containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ApplyTemplate() error = %v", err)
+			}
+
+			// And
+			for rel, content := range tt.want {
+				got, err := os.ReadFile(filepath.Join(dest, filepath.FromSlash(rel)))
+				if err != nil || string(got) != content {
+					t.Errorf("%s = %q (%v), want %q", rel, got, err, content)
+				}
+			}
+			for _, rel := range tt.absent {
+				if _, err := os.Stat(filepath.Join(dest, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+					t.Errorf("Expected %s to be absent, stat err = %v", rel, err)
+				}
+			}
+		})
+	}
+}

@@ -87,6 +87,12 @@ exclude:
     when: "false"`,
 			valid: true,
 		},
+		{name: "rename", config: "rename:\n  - from: github\n    to: .github", valid: true},
+		{name: "rename without to", config: "rename:\n  - from: github", valid: false},
+		{name: "rename without from", config: "rename:\n  - to: .github", valid: false},
+		{name: "rename with blank path", config: "rename:\n  - from: ' '\n    to: a", valid: false},
+		{name: "rename with unknown key", config: "rename:\n  - from: a\n    to: b\n    too: c", valid: false},
+		{name: "rename must be a list", config: "rename: {from: a, to: b}", valid: false},
 		{name: "unknown top-level key", config: `nmae: typo`, valid: false},
 		{name: "unknown input key", config: "inputs:\n  a: {defualt: x}", valid: false},
 		{name: "list default", config: "inputs:\n  a: {default: [x]}", valid: false},
@@ -137,6 +143,9 @@ func TestSchema_AgreesWithValidate(t *testing.T) {
 		{name: "list default", config: "inputs:\n  a: {default: [x]}"},
 		{name: "scalar default", config: "inputs:\n  a: {default: 1}"},
 		{name: "blank input name", config: "inputs:\n  ' ': {default: x}"},
+		{name: "valid rename", config: "rename:\n  - from: a\n    to: b"},
+		{name: "rename without to", config: "rename:\n  - from: a"},
+		{name: "rename with blank from", config: "rename:\n  - from: ''\n    to: b"},
 		{name: "valid choices", config: "inputs:\n  a: {default: x, choices: [x, y]}"},
 	}
 

@@ -25,6 +25,9 @@ exclude:
     when: "true"
   - paths: [b, c]
     when: '{{eq .Inputs.kind.Value "cli"}}'
+rename:
+  - from: github
+    to: .github
 `
 
 	tests := []struct {
@@ -59,6 +62,9 @@ exclude:
 				}
 				if len(got.Exclude) != 2 || len(got.Exclude[1].Paths) != 2 || got.Exclude[0].When != "true" {
 					t.Errorf("exclude = %+v", got.Exclude)
+				}
+				if len(got.Rename) != 1 || got.Rename[0].From != "github" || got.Rename[0].To != ".github" {
+					t.Errorf("rename = %+v", got.Rename)
 				}
 			},
 		},

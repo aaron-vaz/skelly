@@ -120,9 +120,43 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, dir string) error {
 		}
 	}
 
+	// Renames come last, so the template's own names are what Raw and Exclude see
+	if err := p.applyRenames(root, config); err != nil {
+		return err
+	}
+
 	// Finally, delete the template config file
 	if err := root.Remove(TemplateConfigName); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
+	}
+	return nil
+}
+
+// applyRenames moves every path listed under Rename, creating the parent
+// directories of the new location. A missing source or an existing target is an
+// error, so a typo or a clash never silently leaves the project half renamed.
+func (p *Processor) applyRenames(root *os.Root, config ProjectTemplate) error {
+	for _, rename := range config.Rename {
+		from, to := cleanPath(rename.From), cleanPath(rename.To)
+
+		if _, err := root.Lstat(from); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("rename %q: no such file or directory in the template", rename.From)
+			}
+			return err
+		}
+		if _, err := root.Lstat(to); err == nil {
+			return fmt.Errorf("rename %q to %q: %s already exists", rename.From, rename.To, rename.To)
+		}
+
+		if dir := path.Dir(to); dir != "." {
+			if err := root.MkdirAll(dir, 0o755); err != nil {
+				return fmt.Errorf("rename %q: %w", rename.From, err)
+			}
+		}
+		if err := root.Rename(from, to); err != nil {
+			return fmt.Errorf("rename %q to %q: %w", rename.From, rename.To, err)
+		}
 	}
 	return nil
 }

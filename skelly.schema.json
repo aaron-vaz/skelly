@@ -38,6 +38,11 @@
       "type": "array",
       "description": "Paths left out of the generated project, before rendering, whenever the condition renders as true.",
       "items": { "$ref": "#/$defs/exclusion" }
+    },
+    "rename": {
+      "type": "array",
+      "description": "Paths moved once the project is rendered, in the order listed, e.g. from github to .github so files for generated projects stay inert in the template's own repository. Raw and exclude patterns refer to the template's own names, before renaming.",
+      "items": { "$ref": "#/$defs/renaming" }
     }
   },
   "$defs": {
@@ -67,6 +72,23 @@
           "description": "The only values accepted for this input. A default must be one of them.",
           "items": { "type": "string" },
           "uniqueItems": true
+        }
+      }
+    },
+    "renaming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Path in the template, as it is named there. It must exist."
+        },
+        "to": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Path in the generated project. It must not exist yet; missing parent directories are created."
         }
       }
     },

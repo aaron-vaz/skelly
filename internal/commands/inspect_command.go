@@ -31,6 +31,11 @@ type inspectExclusion struct {
 	When  string   `json:"when"`
 }
 
+type inspectRename struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
 // inspectResult is the JSON printed by the inspect command.
 type inspectResult struct {
 	Source      string             `json:"source"`
@@ -40,6 +45,7 @@ type inspectResult struct {
 	Inputs      []inspectInput     `json:"inputs"`
 	Raw         []string           `json:"raw"`
 	Exclude     []inspectExclusion `json:"exclude"`
+	Rename      []inspectRename    `json:"rename"`
 }
 
 // InspectCommand prints what a template asks for, as JSON, without creating
@@ -113,6 +119,7 @@ func newInspectResult(source string, tmpl *templates.ProjectTemplate) inspectRes
 		Inputs:  []inspectInput{},
 		Raw:     []string{},
 		Exclude: []inspectExclusion{},
+		Rename:  []inspectRename{},
 	}
 	if tmpl == nil {
 		return result
@@ -136,6 +143,10 @@ func newInspectResult(source string, tmpl *templates.ProjectTemplate) inspectRes
 
 	for _, exclusion := range tmpl.Exclude {
 		result.Exclude = append(result.Exclude, inspectExclusion{Paths: exclusion.Patterns(), When: exclusion.When})
+	}
+
+	for _, rename := range tmpl.Rename {
+		result.Rename = append(result.Rename, inspectRename{From: rename.From, To: rename.To})
 	}
 	return result
 }
