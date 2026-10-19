@@ -3,9 +3,10 @@ package templates
 import (
 	"errors"
 	"fmt"
-	"path"
 	"slices"
 	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 // Input defines interactive user fields typically consumed via CLI dialog.
@@ -22,9 +23,25 @@ type Input struct {
 type Exclusion struct {
 	// Path is a glob matched like Raw patterns: against a file's relative path,
 	// its name, or any parent directory.
-	Path string `yaml:"path"`
+	Path string `yaml:"path,omitempty"`
+	// Paths lists several globs that share the same condition.
+	Paths []string `yaml:"paths,omitempty"`
 	// When is rendered as a template and must produce "true" or "false".
 	When string `yaml:"when"`
+}
+
+// Patterns returns every glob of the exclusion, whether it was written as
+// path or as paths.
+func (e Exclusion) Patterns() []string {
+	if e.Path == "" {
+		return e.Paths
+	}
+	return append([]string{e.Path}, e.Paths...)
+}
+
+// label names the exclusion in error messages.
+func (e Exclusion) label() string {
+	return strings.Join(e.Patterns(), ", ")
 }
 
 // ProjectTemplate delineates the configuration manifest defining how a template generates.
@@ -69,19 +86,25 @@ func (t ProjectTemplate) Validate() error {
 	}
 
 	for _, pattern := range t.Raw {
-		if _, err := path.Match(pattern, ""); err != nil {
-			errs = append(errs, fmt.Errorf("invalid raw pattern %q: %w", pattern, err))
+		if !doublestar.ValidatePattern(pattern) {
+			errs = append(errs, fmt.Errorf("invalid raw pattern %q: %w", pattern, doublestar.ErrBadPattern))
 		}
 	}
 
 	for _, exclusion := range t.Exclude {
-		if exclusion.Path == "" {
+		patterns := exclusion.Patterns()
+		if len(patterns) == 0 {
 			errs = append(errs, errors.New("exclude path must not be blank"))
-		} else if _, err := path.Match(exclusion.Path, ""); err != nil {
-			errs = append(errs, fmt.Errorf("invalid exclude pattern %q: %w", exclusion.Path, err))
+		}
+		for _, pattern := range patterns {
+			if strings.TrimSpace(pattern) == "" {
+				errs = append(errs, errors.New("exclude path must not be blank"))
+			} else if !doublestar.ValidatePattern(pattern) {
+				errs = append(errs, fmt.Errorf("invalid exclude pattern %q: %w", pattern, doublestar.ErrBadPattern))
+			}
 		}
 		if strings.TrimSpace(exclusion.When) == "" {
-			errs = append(errs, fmt.Errorf("exclude %q: when must not be blank", exclusion.Path))
+			errs = append(errs, fmt.Errorf("exclude %q: when must not be blank", exclusion.label()))
 		}
 	}
 

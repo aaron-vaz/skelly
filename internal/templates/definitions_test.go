@@ -64,6 +64,24 @@ exclude:
     when: '{{eq .Inputs.kind.Value "cli"}}'`,
 		},
 		{
+			name: "valid exclude with several paths and recursive globs",
+			config: `
+exclude:
+  - paths: [internal/server, "**/*_test.go", "Dockerfile{,.dev}"]
+    when: "true"
+  - path: docs
+    paths: [site]
+    when: "false"`,
+		},
+		{
+			name: "invalid exclude paths",
+			config: `
+exclude:
+  - paths: ['', '[unclosed']
+    when: "true"`,
+			wantErr: []string{"exclude path must not be blank", `invalid exclude pattern "[unclosed"`},
+		},
+		{
 			name: "invalid exclude",
 			config: `
 exclude:
@@ -72,6 +90,10 @@ exclude:
     when: "true"
   - path: docs`,
 			wantErr: []string{"exclude path must not be blank", `invalid exclude pattern "[unclosed"`, `exclude "docs": when must not be blank`},
+		},
+		{
+			name:   "recursive raw pattern",
+			config: `raw: ["**/*.tpl"]`,
 		},
 		{
 			name:    "invalid raw pattern",

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/aaron-vaz/skelly/main/skelly.schema.json",
+  "title": ".skelly.yml",
+  "description": "Configuration of a skelly template.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the template."
+    },
+    "description": {
+      "type": "string",
+      "description": "What the template generates."
+    },
+    "renderer": {
+      "type": "string",
+      "description": "Template engine to render with. Defaults to the standard text/template renderer."
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Values asked from the user, available to templates as .Inputs.<name>.Value.",
+      "propertyNames": { "pattern": "\\S" },
+      "additionalProperties": { "$ref": "#/$defs/input" }
+    },
+    "env": {
+      "type": "object",
+      "description": "Extra values made available to templates.",
+      "additionalProperties": true
+    },
+    "raw": {
+      "type": "array",
+      "description": "Globs of files copied without rendering their names or contents, e.g. files that use {{ }} themselves. A pattern can match a file's path, its name, or any parent directory; ** matches across directories.",
+      "items": { "$ref": "#/$defs/glob" }
+    },
+    "exclude": {
+      "type": "array",
+      "description": "Paths left out of the generated project, before rendering, whenever the condition renders as true.",
+      "items": { "$ref": "#/$defs/exclusion" }
+    }
+  },
+  "$defs": {
+    "glob": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "A doublestar glob, e.g. internal/server, *.tpl, **/*_test.go or Dockerfile{,.dev}."
+    },
+    "scalar": {
+      "type": ["string", "number", "boolean", "null"]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Shown to the user when asking for the value."
+        },
+        "default": {
+          "$ref": "#/$defs/scalar",
+          "description": "Used when the user gives no answer. An input without a default is required."
+        },
+        "choices": {
+          "type": "array",
+          "description": "The only values accepted for this input. A default must be one of them.",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["when"],
+      "anyOf": [{ "required": ["path"] }, { "required": ["paths"] }],
+      "properties": {
+        "path": { "$ref": "#/$defs/glob" },
+        "paths": {
+          "type": "array",
+          "description": "Several globs that share the same condition.",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/glob" }
+        },
+        "when": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A template that must render as true or false, e.g. {{eq .Inputs.kind.Value \"cli\"}}."
+        }
+      }
+    }
+  }
+}

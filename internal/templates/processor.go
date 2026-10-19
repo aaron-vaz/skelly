@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 )
 
@@ -136,7 +137,7 @@ func (p *Processor) removeExcluded(root *os.Root, config ProjectTemplate) error 
 			return err
 		}
 		if excluded {
-			patterns = append(patterns, exclusion.Path)
+			patterns = append(patterns, exclusion.Patterns()...)
 		}
 	}
 	if len(patterns) == 0 {
@@ -170,14 +171,14 @@ func (p *Processor) removeExcluded(root *os.Root, config ProjectTemplate) error 
 }
 
 func (p *Processor) isExcluded(config ProjectTemplate, exclusion Exclusion) (bool, error) {
-	rendered, err := p.renderer.Render(config, "exclude "+exclusion.Path, exclusion.When)
+	rendered, err := p.renderer.Render(config, "exclude "+exclusion.label(), exclusion.When)
 	if err != nil {
-		return false, fmt.Errorf("exclude %q: %w", exclusion.Path, err)
+		return false, fmt.Errorf("exclude %q: %w", exclusion.label(), err)
 	}
 
 	excluded, err := strconv.ParseBool(strings.TrimSpace(rendered))
 	if err != nil {
-		return false, fmt.Errorf("exclude %q: when must render as true or false, got %q", exclusion.Path, strings.TrimSpace(rendered))
+		return false, fmt.Errorf("exclude %q: when must render as true or false, got %q", exclusion.label(), strings.TrimSpace(rendered))
 	}
 	return excluded, nil
 }
@@ -261,14 +262,15 @@ func removeSkippedDirs(root *os.Root) error {
 }
 
 // matchesAny reports whether rel, its base name, or any of its parent
-// directories matches one of the glob patterns.
+// directories matches one of the glob patterns. Patterns use doublestar
+// syntax, so "**" matches across directory separators.
 func matchesAny(patterns []string, rel string) bool {
 	for _, pattern := range patterns {
-		if ok, _ := path.Match(pattern, path.Base(rel)); ok {
+		if ok, _ := doublestar.Match(pattern, path.Base(rel)); ok {
 			return true
 		}
 		for candidate := rel; candidate != "."; candidate = path.Dir(candidate) {
-			if ok, _ := path.Match(pattern, candidate); ok {
+			if ok, _ := doublestar.Match(pattern, candidate); ok {
 				return true
 			}
 		}

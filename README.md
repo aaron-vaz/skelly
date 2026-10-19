@@ -93,6 +93,7 @@ sources:
 A template is any directory (or repository) containing a `.skelly.yml` file. File contents **and** file/directory names are rendered with Go's [`text/template`](https://pkg.go.dev/text/template):
 
 ```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aaron-vaz/skelly/main/skelly.schema.json
 # .skelly.yml
 name: my-template
 description: A Go service skeleton
@@ -108,8 +109,10 @@ inputs:
     choices: [cli, service]      # any other answer is rejected and asked again
 # Paths left out of the generated project when the condition renders as true.
 exclude:
-  - path: internal/server
+  - paths: [internal/server, Dockerfile]   # several paths can share one condition
     when: '{{eq .Inputs.project_type.Value "cli"}}'
+  - path: "**/*_test.go"                    # ** matches across directories
+    when: "false"
 # Files copied without rendering their names or contents, e.g. files that use {{ }} themselves.
 # A pattern can match a file's path, its name, or any parent directory.
 raw:
@@ -125,8 +128,10 @@ raw:
 Notes:
 
 *   Referencing an input that is not defined is an error, rather than silently rendering `<no value>`.
-*   `.skelly.yml` is validated up front: input names must not be blank, defaults must be a string, number or boolean, and `raw` patterns must be valid globs.
-*   `exclude` lets one template produce several variants. `path` is a glob matched like `raw` patterns (a file's path, its name, or any parent directory) and `when` is rendered as a template that must produce `true` or `false`. Excluded paths are removed before anything is rendered, and `exclude` also applies to `raw` files, so a raw CI workflow can still be left out conditionally.
+*   `.skelly.yml` is validated up front: input names must not be blank, defaults must be a string, number or boolean, and `raw` and `exclude` patterns must be valid globs.
+*   `exclude` lets one template produce several variants. `path` (or `paths`, for several globs sharing one condition) is matched like `raw` patterns (a file's path, its name, or any parent directory) and `when` is rendered as a template that must produce `true` or `false`. Excluded paths are removed before anything is rendered, and `exclude` also applies to `raw` files, so a raw CI workflow can still be left out conditionally.
+*   Globs use [doublestar](https://github.com/bmatcuk/doublestar) syntax for `raw` and `exclude`: `*` and `?` stay within a directory, `**` matches across directories (`docs/**/*.md`, `**/*_test.go`), and `{a,b}` matches alternatives.
+*   `skelly.schema.json` is a JSON Schema for `.skelly.yml`. Add the `# yaml-language-server: $schema=...` line shown above and editors with the YAML language server get autocomplete, docs and inline errors. It covers structure only; semantic checks, such as a default being one of its choices, still happen when the template is loaded.
 *   `choices` restricts an input to a fixed list of values; a `default` must be one of them.
 *   A rendered name may contain `/` to create nested directories (handy for Java packages), but can never point outside the project.
 *   Binary files and symlinks are copied without rendering; the template's `.git` directory and `.skelly.yml` are not copied at all.
