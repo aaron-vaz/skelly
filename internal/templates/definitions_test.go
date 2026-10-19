@@ -82,12 +82,11 @@ exclude:
 			wantErr: []string{"exclude path must not be blank", `invalid exclude pattern "[unclosed"`},
 		},
 		{
-			name: "exclude without a condition is allowed, as is a blank one",
+			name: "exclude without a condition is allowed",
 			config: `
 exclude:
   - path: TEMPLATE.md
-  - paths: [a, b]
-    when: ""`,
+  - paths: [a, b]`,
 		},
 		{
 			name: "exclude condition that does not parse",
@@ -404,6 +403,9 @@ func TestProjectTemplate_Unmarshal_Strict(t *testing.T) {
 		{name: "empty paths next to a path", config: "exclude:\n  - path: a\n    paths: []", wantErr: "exclude paths must not be blank"},
 		{name: "an entry that is not a mapping", config: "exclude:\n  - server", wantErr: "each exclude entry must be a mapping"},
 		{name: "a rename that is not a mapping", config: "rename:\n  - a", wantErr: "each rename entry must be a mapping"},
+		{name: "a when with nothing after it is not the same as no when", config: "exclude:\n  - path: a\n    when: # todo", wantErr: "exclude when must not be blank"},
+		{name: "a blank when is an error", config: "exclude:\n  - path: a\n    when: '  '", wantErr: "exclude when must not be blank"},
+		{name: "a blank when on a rename is an error", config: "rename:\n  - from: a\n    to: b\n    when:", wantErr: "rename when must not be blank"},
 		{name: "known keys are accepted", config: "exclude:\n  - paths: [a]\n    when: 'true'\nrename:\n  - from: a\n    to: b\n    when: 'true'"},
 		{name: "other top-level keys are still free for authors to add", config: "name: x\nversion: 2\nauthor: me"},
 	}
@@ -437,6 +439,10 @@ func TestIsSkippedName(t *testing.T) {
 		{".GIT", true},
 		{".Git", true},
 		{".git ", true},
+		{".git::$INDEX_ALLOCATION", true},
+		{".git:stream", true},
+		{"GIT~1:x", true},
+		{":git", false},
 		{".git.", true},
 		{".git. .", true},
 		{".g\u200bit", true},

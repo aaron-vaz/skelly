@@ -52,7 +52,7 @@ func (e *Exclusion) UnmarshalYAML(node *yaml.Node) error {
 	if err := node.Decode((*plain)(e)); err != nil {
 		return err
 	}
-	return checkNotBlank(node, "exclude", map[string]bool{"path": e.Path == "", "paths": len(e.Paths) == 0})
+	return checkNotBlank(node, "exclude", map[string]bool{"path": e.Path == "", "paths": len(e.Paths) == 0, "when": strings.TrimSpace(e.When) == ""})
 }
 
 // Patterns returns every glob of the exclusion, whether it was written as
@@ -95,7 +95,10 @@ func (r *Renaming) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 	type plain Renaming
-	return node.Decode((*plain)(r))
+	if err := node.Decode((*plain)(r)); err != nil {
+		return err
+	}
+	return checkNotBlank(node, "rename", map[string]bool{"when": strings.TrimSpace(r.When) == ""})
 }
 
 // checkKeys rejects a mapping that has a key other than the allowed ones.
@@ -112,8 +115,9 @@ func checkKeys(node *yaml.Node, what string, allowed ...string) error {
 	return nil
 }
 
-// checkNotBlank rejects a key that is written but empty, such as path: "" or
-// paths: [], which would otherwise read the same as leaving it out.
+// checkNotBlank rejects a key that is written but empty, such as path: "",
+// paths: [] or a when with nothing after it, which would otherwise read the same
+// as leaving it out, and for a when that means the entry always applies.
 func checkNotBlank(node *yaml.Node, what string, blank map[string]bool) error {
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		if key := node.Content[i].Value; blank[key] {

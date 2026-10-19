@@ -483,9 +483,12 @@ func touchesSkipped(rel string) bool {
 
 // isSkippedName reports whether name would be taken for a skipped directory by
 // the filesystem or by git. Case is ignored, as are trailing dots and spaces,
-// which Windows drops, and characters that macOS ignores when it compares
-// names; a Windows short name such as GIT~1 is the same directory as .git.
+// which Windows drops, characters that macOS ignores when it compares names,
+// and what follows a colon, which NTFS reads as a stream of the same name; a
+// Windows short name such as GIT~1 is the same directory as .git.
 func isSkippedName(name string) bool {
+	// On NTFS ".git::$INDEX_ALLOCATION" is the directory .git itself
+	name, _, _ = strings.Cut(name, ":")
 	normalised := strings.TrimRight(strings.Map(func(r rune) rune {
 		if unicode.Is(unicode.Cf, r) {
 			return -1

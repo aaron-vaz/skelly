@@ -92,6 +92,7 @@
         },
         "when": {
           "type": "string",
+          "pattern": "\\S",
           "description": "A template that must render as true or false. The rename is skipped when it is false; without it the rename always applies."
         }
       }
@@ -110,6 +111,7 @@
         },
         "when": {
           "type": "string",
+          "pattern": "\\S",
           "description": "A template that must render as true or false, e.g. {{eq .Inputs.kind.Value \"cli\"}}. Without it the paths are always excluded."
         }
       }

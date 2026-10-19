@@ -108,7 +108,8 @@ exclude:
 		{name: "exclude without a path", config: "exclude:\n  - when: 'true'", valid: false},
 		{name: "exclude with empty paths", config: "exclude:\n  - paths: []\n    when: 'true'", valid: false},
 		{name: "exclude with blank path", config: "exclude:\n  - path: ''\n    when: 'true'", valid: false},
-		{name: "exclude with blank when", config: "exclude:\n  - path: a\n    when: ''", valid: true},
+		{name: "exclude with blank when", config: "exclude:\n  - path: a\n    when: ''", valid: false},
+		{name: "exclude with a when that has no value", config: "exclude:\n  - path: a\n    when:", valid: false},
 		{name: "exclude with unknown key", config: "exclude:\n  - path: a\n    when: 'true'\n    pth: b", valid: false},
 	}
 
@@ -139,6 +140,9 @@ func TestSchema_AgreesWithValidate(t *testing.T) {
 		{name: "valid exclude path", config: "exclude:\n  - path: a\n    when: 'true'"},
 		{name: "valid exclude paths", config: "exclude:\n  - paths: [a, '**/b']\n    when: 'true'"},
 		{name: "exclude without a path", config: "exclude:\n  - when: 'true'"},
+		{name: "exclude with a blank when", config: "exclude:\n  - path: a\n    when: ''"},
+		{name: "exclude with a when that has no value", config: "exclude:\n  - path: a\n    when:"},
+		{name: "rename with a blank when", config: "rename:\n  - from: a\n    to: b\n    when: ' '"},
 		{name: "exclude with a blank path next to paths", config: "exclude:\n  - path: ''\n    paths: [a]"},
 		{name: "exclude with a path and empty paths", config: "exclude:\n  - path: a\n    paths: []"},
 		{name: "exclude with an unknown key", config: "exclude:\n  - path: a\n    wen: 'false'"},
