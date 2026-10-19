@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -39,69 +40,103 @@ func (a *answerFlag) Set(raw string) error {
 	return nil
 }
 
-// collectInputs fills in the value of every input. Answers given up front with
-// -set are used as they are, and the rest are asked for, or, without prompting,
-// taken from their defaults.
-func (c *InitCommand) collectInputs(ctx context.Context, inputs map[string]templates.Input) error {
-	if err := applyAnswers(inputs, c.options.answers); err != nil {
+// collectInputs fills in the value of every input, in the order they can be
+// answered: an input whose description, default or choices use other inputs
+// comes after them, and is rendered with their values. Answers given up front
+// with -set are used as they are, and the rest are asked for, or, without
+// prompting, taken from their defaults. Every problem is reported at once.
+func (c *InitCommand) collectInputs(ctx context.Context, tmpl *templates.ProjectTemplate) error {
+	layers, err := tmpl.InputLayers()
+	if err != nil {
 		return err
 	}
+	deps := tmpl.InputDependencies()
 
-	pending := make(map[string]templates.Input)
-	for name, input := range inputs {
-		if _, answered := c.options.answers[name]; !answered {
-			pending[name] = input
+	errs := unknownAnswers(tmpl.Inputs, c.options.answers)
+	var missing []string
+	blocked := make(map[string]bool)
+
+	for _, layer := range layers {
+		pending := make(map[string]templates.Input)
+
+		for _, name := range layer {
+			// Without the value of something it uses, an input cannot be rendered,
+			// and that problem has already been reported
+			if slices.ContainsFunc(deps[name], func(dep string) bool { return blocked[dep] }) {
+				blocked[name] = true
+				continue
+			}
+
+			input, err := c.processor.RenderInput(*tmpl, name)
+			if err != nil {
+				errs = append(errs, err)
+				blocked[name] = true
+				continue
+			}
+
+			answer, answered := c.options.answers[name]
+			if !answered {
+				pending[name] = input
+				continue
+			}
+			if err := checkAnswer(name, input, answer); err != nil {
+				errs = append(errs, err)
+				blocked[name] = true
+				continue
+			}
+			input.Value = answer
+			tmpl.Inputs[name] = input
 		}
-	}
 
-	if !c.options.noInput {
-		if err := c.ui.RenderInputs(ctx, pending); err != nil {
+		if len(pending) == 0 {
+			continue
+		}
+
+		if c.options.noInput {
+			for _, name := range useDefaults(pending) {
+				missing = append(missing, name)
+				blocked[name] = true
+			}
+		} else if err := c.ui.RenderInputs(ctx, pending); err != nil {
 			return err
 		}
-	} else if err := useDefaults(pending); err != nil {
-		return err
+		for name, input := range pending {
+			tmpl.Inputs[name] = input
+		}
 	}
 
-	for name, input := range pending {
-		inputs[name] = input
-	}
-	return nil
-}
-
-// applyAnswers validates the answers against the template's inputs, reporting
-// every problem at once, and stores them as the inputs' values.
-func applyAnswers(inputs map[string]templates.Input, answers map[string]string) error {
-	names := make([]string, 0, len(answers))
-	for name := range answers {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-
-	var errs []error
-	for _, name := range names {
-		input, ok := inputs[name]
-		if !ok {
-			errs = append(errs, fmt.Errorf("unknown input %q (the template has: %s)", name, joinedNames(inputs)))
-			continue
-		}
-		if answers[name] == "" {
-			errs = append(errs, fmt.Errorf("input %q must not be empty", name))
-			continue
-		}
-		if len(input.Choices) > 0 && !slices.Contains(input.Choices, answers[name]) {
-			errs = append(errs, fmt.Errorf("input %q must be one of: %s", name, strings.Join(input.Choices, ", ")))
-			continue
-		}
-		input.Value = answers[name]
-		inputs[name] = input
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		errs = append(errs, fmt.Errorf("missing required inputs: %s (pass them with -set name=value)", strings.Join(missing, ", ")))
 	}
 	return errors.Join(errs...)
 }
 
-// useDefaults answers every remaining input with its default, and names the
-// ones that have none, which can only be answered by the user.
-func useDefaults(inputs map[string]templates.Input) error {
-	var missing []string
+// unknownAnswers reports the answers that name no input of the template.
+func unknownAnswers(inputs map[string]templates.Input, answers map[string]string) []error {
+	var errs []error
+	for _, name := range slices.Sorted(maps.Keys(answers)) {
+		if _, ok := inputs[name]; !ok {
+			errs = append(errs, fmt.Errorf("unknown input %q (the template has: %s)", name, joinedNames(inputs)))
+		}
+	}
+	return errs
+}
+
+// checkAnswer rejects an answer the user could not have typed in at the prompt.
+func checkAnswer(name string, input templates.Input, answer string) error {
+	if answer == "" {
+		return fmt.Errorf("input %q must not be empty", name)
+	}
+	if len(input.Choices) > 0 && !slices.Contains(input.Choices, answer) {
+		return fmt.Errorf("input %q must be one of: %s", name, strings.Join(input.Choices, ", "))
+	}
+	return nil
+}
+
+// useDefaults answers every input with its default, and returns the names of
+// the ones that have none, which can only be answered by the user.
+func useDefaults(inputs map[string]templates.Input) (missing []string) {
 	for _, name := range sortedNames(inputs) {
 		input := inputs[name]
 		if input.Default == nil || input.Default == "" {
@@ -111,11 +146,7 @@ func useDefaults(inputs map[string]templates.Input) error {
 		input.Value = input.Default
 		inputs[name] = input
 	}
-
-	if len(missing) > 0 {
-		return fmt.Errorf("missing required inputs: %s (pass them with -set name=value)", strings.Join(missing, ", "))
-	}
-	return nil
+	return missing
 }
 
 func sortedNames(inputs map[string]templates.Input) []string {

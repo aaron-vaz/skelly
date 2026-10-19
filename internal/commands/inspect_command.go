@@ -24,6 +24,9 @@ type inspectInput struct {
 	Choices     []string `json:"choices,omitempty"`
 	// Required inputs have no default, so they must be given with -set
 	Required bool `json:"required"`
+	// DependsOn names the inputs whose values the description, default or choices
+	// are built from, which are therefore shown here as templates
+	DependsOn []string `json:"dependsOn,omitempty"`
 }
 
 type inspectExclusion struct {
@@ -130,6 +133,7 @@ func newInspectResult(source string, tmpl *templates.ProjectTemplate) inspectRes
 	result.Description = tmpl.Description
 	result.Raw = append(result.Raw, tmpl.Raw...)
 
+	deps := tmpl.InputDependencies()
 	for _, name := range sortedNames(tmpl.Inputs) {
 		input := tmpl.Inputs[name]
 		result.Inputs = append(result.Inputs, inspectInput{
@@ -138,6 +142,7 @@ func newInspectResult(source string, tmpl *templates.ProjectTemplate) inspectRes
 			Default:     input.Default,
 			Choices:     input.Choices,
 			Required:    input.Default == nil || input.Default == "",
+			DependsOn:   deps[name],
 		})
 	}
 

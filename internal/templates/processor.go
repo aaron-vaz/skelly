@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -72,7 +73,19 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, dir string) error {
 		return err
 	}
 
-	// Excluded paths go first, so their contents are never rendered and cannot fail the render
+	// Derived values come first, as everything else may use them
+	config, err = p.renderEnv(config)
+	if err != nil {
+		return err
+	}
+
+	// Patterns may be templates too, and are needed in their final form from here on
+	config, err = p.renderPatterns(config)
+	if err != nil {
+		return err
+	}
+
+	// Excluded paths go next, so their contents are never rendered and cannot fail the render
 	if err := p.removeExcluded(root, config); err != nil {
 		return err
 	}
@@ -132,33 +145,68 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, dir string) error {
 	return nil
 }
 
-// applyRenames moves every path listed under Rename, creating the parent
-// directories of the new location. A missing source or an existing target is an
-// error, so a typo or a clash never silently leaves the project half renamed.
+// applyRenames moves every path listed under Rename whose condition holds,
+// creating the parent directories of the new location. A missing source or an
+// existing target is an error, so a typo or a clash never silently leaves the
+// project half renamed.
 func (p *Processor) applyRenames(root *os.Root, config ProjectTemplate) error {
 	for _, rename := range config.Rename {
-		from, to := cleanPath(rename.From), cleanPath(rename.To)
+		if strings.TrimSpace(rename.When) != "" {
+			apply, err := p.evaluate(config, "rename "+rename.From, rename.When)
+			if err != nil {
+				return fmt.Errorf("rename %q: %w", rename.From, err)
+			}
+			if !apply {
+				continue
+			}
+		}
+
+		from, err := p.renderPath(config, "rename from", rename.From)
+		if err != nil {
+			return fmt.Errorf("rename %q: from: %w", rename.From, err)
+		}
+		to, err := p.renderPath(config, "rename to", rename.To)
+		if err != nil {
+			return fmt.Errorf("rename %q: to: %w", rename.From, err)
+		}
+		if from == to {
+			return fmt.Errorf("rename %q: from and to are the same", from)
+		}
 
 		if _, err := root.Lstat(from); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("rename %q: no such file or directory in the template", rename.From)
+				return fmt.Errorf("rename %q: no such file or directory in the template", from)
 			}
 			return err
 		}
 		if _, err := root.Lstat(to); err == nil {
-			return fmt.Errorf("rename %q to %q: %s already exists", rename.From, rename.To, rename.To)
+			return fmt.Errorf("rename %q to %q: %s already exists", from, to, to)
 		}
 
 		if dir := path.Dir(to); dir != "." {
 			if err := root.MkdirAll(dir, 0o755); err != nil {
-				return fmt.Errorf("rename %q: %w", rename.From, err)
+				return fmt.Errorf("rename %q: %w", from, err)
 			}
 		}
 		if err := root.Rename(from, to); err != nil {
-			return fmt.Errorf("rename %q to %q: %w", rename.From, rename.To, err)
+			return fmt.Errorf("rename %q to %q: %w", from, to, err)
 		}
 	}
 	return nil
+}
+
+// renderPath renders a path of the config and checks that it stays inside the project.
+func (p *Processor) renderPath(config ProjectTemplate, name string, text string) (string, error) {
+	rendered, err := p.renderer.Render(config, name, text)
+	if err != nil {
+		return "", err
+	}
+
+	cleaned := cleanPath(rendered)
+	if !filepath.IsLocal(cleaned) || cleaned == TemplateConfigName {
+		return "", fmt.Errorf("%q is not a path inside the project", rendered)
+	}
+	return cleaned, nil
 }
 
 // removeExcluded deletes every path matched by an Exclude entry whose
@@ -204,17 +252,141 @@ func (p *Processor) removeExcluded(root *os.Root, config ProjectTemplate) error 
 	return nil
 }
 
+// RenderInput renders the description, default and choices of the named input,
+// which may use the values of the inputs answered so far. Env is not available
+// to inputs, as it is derived from them, so it is empty here.
+func (p *Processor) RenderInput(config ProjectTemplate, name string) (Input, error) {
+	input := config.Inputs[name]
+	if !inputIsTemplated(input) {
+		return input, nil
+	}
+
+	scope := config
+	scope.Env = map[string]any{}
+
+	render := func(field string, text string) (string, error) {
+		rendered, err := p.renderer.Render(scope, "input "+name+" "+field, text)
+		if err != nil {
+			return "", fmt.Errorf("input %q: %s: %w", name, field, err)
+		}
+		return rendered, nil
+	}
+
+	var err error
+	if input.Description, err = render("description", input.Description); err != nil {
+		return input, err
+	}
+	if text, ok := input.Default.(string); ok {
+		if input.Default, err = render("default", text); err != nil {
+			return input, err
+		}
+	}
+
+	input.Choices = slices.Clone(input.Choices)
+	for i, choice := range input.Choices {
+		if input.Choices[i], err = render("choices", choice); err != nil {
+			return input, err
+		}
+	}
+
+	if err := validateChoices(name, input); err != nil {
+		return input, err
+	}
+	return input, nil
+}
+
+// renderPatterns renders the globs of Raw and Exclude, which may be templates,
+// and checks the result. The config it was given is left as it is.
+func (p *Processor) renderPatterns(config ProjectTemplate) (ProjectTemplate, error) {
+	render := func(what string, pattern string) (string, error) {
+		rendered, err := p.renderer.Render(config, what+" "+pattern, pattern)
+		if err != nil {
+			return "", fmt.Errorf("%s pattern %q: %w", what, pattern, err)
+		}
+		rendered = strings.TrimSpace(rendered)
+		if rendered == "" || !doublestar.ValidatePattern(rendered) {
+			return "", fmt.Errorf("%s pattern %q renders as %q, which is not a valid glob", what, pattern, rendered)
+		}
+		return rendered, nil
+	}
+
+	raw := make([]string, 0, len(config.Raw))
+	for _, pattern := range config.Raw {
+		rendered, err := render("raw", pattern)
+		if err != nil {
+			return config, err
+		}
+		raw = append(raw, rendered)
+	}
+
+	exclude := make([]Exclusion, 0, len(config.Exclude))
+	for _, exclusion := range config.Exclude {
+		patterns := make([]string, 0, len(exclusion.Patterns()))
+		for _, pattern := range exclusion.Patterns() {
+			rendered, err := render("exclude", pattern)
+			if err != nil {
+				return config, err
+			}
+			patterns = append(patterns, rendered)
+		}
+		exclude = append(exclude, Exclusion{Paths: patterns, When: exclusion.When})
+	}
+
+	config.Raw = raw
+	config.Exclude = exclude
+	return config, nil
+}
+
 func (p *Processor) isExcluded(config ProjectTemplate, exclusion Exclusion) (bool, error) {
-	rendered, err := p.renderer.Render(config, "exclude "+exclusion.label(), exclusion.When)
+	excluded, err := p.evaluate(config, "exclude "+exclusion.label(), exclusion.When)
 	if err != nil {
 		return false, fmt.Errorf("exclude %q: %w", exclusion.label(), err)
 	}
-
-	excluded, err := strconv.ParseBool(strings.TrimSpace(rendered))
-	if err != nil {
-		return false, fmt.Errorf("exclude %q: when must render as true or false, got %q", exclusion.label(), strings.TrimSpace(rendered))
-	}
 	return excluded, nil
+}
+
+// evaluate renders a condition and reads the result as a boolean.
+func (p *Processor) evaluate(config ProjectTemplate, name string, when string) (bool, error) {
+	rendered, err := p.renderer.Render(config, name, when)
+	if err != nil {
+		return false, err
+	}
+
+	result, err := strconv.ParseBool(strings.TrimSpace(rendered))
+	if err != nil {
+		return false, fmt.Errorf("when must render as true or false, got %q", strings.TrimSpace(rendered))
+	}
+	return result, nil
+}
+
+// renderEnv renders the string values of Env as templates that can use the
+// inputs. They are rendered against an empty Env, so one value referring to
+// another is an error and not an unrendered template.
+func (p *Processor) renderEnv(config ProjectTemplate) (ProjectTemplate, error) {
+	if len(config.Env) == 0 {
+		return config, nil
+	}
+
+	scope := config
+	scope.Env = map[string]any{}
+
+	rendered := make(map[string]any, len(config.Env))
+	for _, key := range slices.Sorted(maps.Keys(config.Env)) {
+		text, ok := config.Env[key].(string)
+		if !ok {
+			rendered[key] = config.Env[key]
+			continue
+		}
+
+		value, err := p.renderer.Render(scope, "env "+key, text)
+		if err != nil {
+			return config, fmt.Errorf("env %q: %w", key, err)
+		}
+		rendered[key] = value
+	}
+
+	config.Env = rendered
+	return config, nil
 }
 
 func (p *Processor) renderContents(root *os.Root, config ProjectTemplate, rel string) error {

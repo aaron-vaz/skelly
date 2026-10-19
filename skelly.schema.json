@@ -26,7 +26,7 @@
     },
     "env": {
       "type": "object",
-      "description": "Extra values made available to templates.",
+      "description": "Values made available to templates as .Env.Name. String values are rendered as templates that can use the inputs, so a derived value is defined once. They cannot refer to other env values.",
       "additionalProperties": true
     },
     "raw": {
@@ -65,7 +65,7 @@
         },
         "default": {
           "$ref": "#/$defs/scalar",
-          "description": "Used when the user gives no answer. An input without a default is required."
+          "description": "Used when the user gives no answer. An input without a default is required. A string may be a template that uses the values of other inputs, e.g. github.com/{{.Inputs.Owner.Value}}/{{.Inputs.Name.Value}}; the input is then asked after those."
         },
         "choices": {
           "type": "array",
@@ -83,12 +83,16 @@
         "from": {
           "type": "string",
           "pattern": "\\S",
-          "description": "Path in the template, as it is named there. It must exist."
+          "description": "Path as it is named once the template is rendered, itself rendered as a template. It must exist."
         },
         "to": {
           "type": "string",
           "pattern": "\\S",
-          "description": "Path in the generated project. It must not exist yet; missing parent directories are created."
+          "description": "Path in the generated project, rendered as a template. It must not exist yet; missing parent directories are created."
+        },
+        "when": {
+          "type": "string",
+          "description": "A template that must render as true or false. The rename is skipped when it is false; without it the rename always applies."
         }
       }
     },

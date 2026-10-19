@@ -170,3 +170,161 @@ rename:
 		})
 	}
 }
+
+func TestProjectTemplate_Validate_Templates(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		wantErr []string
+	}{
+		{
+			name: "inputs may use other inputs",
+			config: `
+inputs:
+  owner: {default: me}
+  name: {description: 'Name for {{.Inputs.owner.Value}}'}
+  module: {default: 'github.com/{{.Inputs.owner.Value}}/{{.Inputs.name.Value}}'}
+  kind: {default: '{{.Inputs.owner.Value}}', choices: ['{{.Inputs.owner.Value}}', other]}`,
+		},
+		{
+			name: "references inside conditions and pipelines are found",
+			config: `
+inputs:
+  a: {default: x}
+  b: {default: '{{if eq .Inputs.a.Value "x"}}{{.Inputs.a.Value | printf "%s!"}}{{end}}'}`,
+		},
+		{
+			name: "env and rename and patterns may be templates",
+			config: `
+inputs:
+  name: {default: app}
+env:
+  module: 'github.com/me/{{.Inputs.name.Value}}'
+  year: 2026
+raw: ['{{.Inputs.name.Value}}/**']
+exclude:
+  - path: 'docs/{{.Inputs.name.Value}}'
+    when: "true"
+rename:
+  - from: 'cmd/{{.Inputs.name.Value}}'
+    to: 'app/{{.Inputs.name.Value}}'
+    when: '{{eq .Inputs.name.Value "app"}}'`,
+		},
+		{
+			name: "templates that do not parse",
+			config: `
+inputs:
+  a: {default: '{{.Inputs.b'}
+  b: {description: '{{if}}'}
+env:
+  x: '{{end}}'
+rename:
+  - from: a
+    to: b
+    when: '{{'
+raw: ['{{']`,
+			wantErr: []string{`input "a": default:`, `input "b": description:`, `env "x":`, `rename "a": when:`, `invalid raw pattern "{{"`},
+		},
+		{
+			name: "unknown input",
+			config: `
+inputs:
+  a: {default: '{{.Inputs.nope.Value}}'}`,
+			wantErr: []string{`input "a": default uses unknown input "nope"`},
+		},
+		{
+			name: "input that uses itself",
+			config: `
+inputs:
+  a: {default: '{{.Inputs.a.Value}}'}`,
+			wantErr: []string{"inputs use each other in a cycle, involving: a"},
+		},
+		{
+			name: "inputs that use each other",
+			config: `
+inputs:
+  a: {default: '{{.Inputs.b.Value}}'}
+  b: {default: '{{.Inputs.c.Value}}'}
+  c: {default: '{{.Inputs.a.Value}}'}
+  d: {default: fine}`,
+			wantErr: []string{"inputs use each other in a cycle, involving: a, b, c"},
+		},
+		{
+			name: "a templated default is not compared with literal choices until it is rendered",
+			config: `
+inputs:
+  a: {default: x}
+  b: {default: '{{.Inputs.a.Value}}', choices: [y]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			var config ProjectTemplate
+			if err := yaml.Unmarshal([]byte(tt.config), &config); err != nil {
+				t.Fatalf("failed to parse config: %v", err)
+			}
+
+			// When
+			err := config.Validate()
+
+			// Then
+			if len(tt.wantErr) == 0 {
+				if err != nil {
+					t.Errorf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate() error = nil, want %v", tt.wantErr)
+			}
+			for _, want := range tt.wantErr {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Validate() error = %q, want it to contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestProjectTemplate_InputLayers(t *testing.T) {
+	// Given
+	var config ProjectTemplate
+	err := yaml.Unmarshal([]byte(`
+inputs:
+  owner: {default: me}
+  name: {description: Name}
+  module: {default: 'github.com/{{.Inputs.owner.Value}}/{{.Inputs.name.Value}}'}
+  image: {default: 'ghcr.io/{{.Inputs.module.Value}}'}
+  alone: {default: x}`), &config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When
+	layers, err := config.InputLayers()
+	deps := config.InputDependencies()
+
+	// Then
+	if err != nil {
+		t.Fatalf("InputLayers() error = %v", err)
+	}
+	want := [][]string{{"alone", "name", "owner"}, {"module"}, {"image"}}
+	if len(layers) != len(want) {
+		t.Fatalf("layers = %v, want %v", layers, want)
+	}
+	for i := range want {
+		if strings.Join(layers[i], ",") != strings.Join(want[i], ",") {
+			t.Errorf("layer %d = %v, want %v", i, layers[i], want[i])
+		}
+	}
+
+	// And
+	if got := strings.Join(deps["module"], ","); got != "name,owner" {
+		t.Errorf("module depends on %q, want name,owner", got)
+	}
+	if _, ok := deps["owner"]; ok {
+		t.Errorf("owner depends on nothing, got %v", deps["owner"])
+	}
+}

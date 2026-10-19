@@ -88,6 +88,8 @@ exclude:
 			valid: true,
 		},
 		{name: "rename", config: "rename:\n  - from: github\n    to: .github", valid: true},
+		{name: "rename with a condition", config: "rename:\n  - from: a\n    to: b\n    when: '{{eq 1 1}}'", valid: true},
+		{name: "templated inputs, env, patterns and renames", config: "inputs:\n  a: {default: x}\n  b: {default: '{{.Inputs.a.Value}}'}\nenv: {m: '{{.Inputs.a.Value}}'}\nraw: ['{{.Inputs.a.Value}}']", valid: true},
 		{name: "rename without to", config: "rename:\n  - from: github", valid: false},
 		{name: "rename without from", config: "rename:\n  - to: .github", valid: false},
 		{name: "rename with blank path", config: "rename:\n  - from: ' '\n    to: a", valid: false},

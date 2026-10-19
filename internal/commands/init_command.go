@@ -119,7 +119,7 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 			return fmt.Errorf("failed to process template: %w", err)
 		}
 	} else {
-		if err := c.collectInputs(ctx, config.Inputs); err != nil {
+		if err := c.collectInputs(ctx, config); err != nil {
 			return fmt.Errorf("failed to collect inputs: %w", err)
 		}
 

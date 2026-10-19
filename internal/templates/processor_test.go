@@ -624,3 +624,219 @@ func TestProcessor_ApplyTemplate_Rename(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessor_RenderInput(t *testing.T) {
+	config := ProjectTemplate{
+		Inputs: map[string]Input{
+			"owner":  {Value: "me"},
+			"name":   {Value: "app"},
+			"module": {Description: "Module of {{.Inputs.name.Value}}", Default: "github.com/{{.Inputs.owner.Value}}/{{.Inputs.name.Value}}", Choices: []string{"github.com/me/app", "other"}},
+			"count":  {Default: 3},
+			"env":    {Default: "{{.Env.Module}}"},
+			"bad":    {Default: "{{.Inputs.owner.Value}}", Choices: []string{"x"}},
+		},
+		Env: map[string]any{"Module": "unrendered {{.Inputs.name.Value}}"},
+	}
+	processor := NewTemplateProcessor(NewRendererService())
+
+	tests := []struct {
+		name    string
+		input   string
+		check   func(t *testing.T, got Input)
+		wantErr string
+	}{
+		{
+			name:  "description, default and choices are rendered from other inputs",
+			input: "module",
+			check: func(t *testing.T, got Input) {
+				if got.Description != "Module of app" || got.Default != "github.com/me/app" || got.Choices[0] != "github.com/me/app" {
+					t.Errorf("got %+v", got)
+				}
+			},
+		},
+		{
+			name:  "an input without templates is returned as it is",
+			input: "count",
+			check: func(t *testing.T, got Input) {
+				if got.Default != 3 {
+					t.Errorf("got %+v", got)
+				}
+			},
+		},
+		{
+			name:    "env is not available to inputs",
+			input:   "env",
+			wantErr: `input "env": default:`,
+		},
+		{
+			name:    "a rendered default outside the rendered choices is an error",
+			input:   "bad",
+			wantErr: `input "bad": default me is not one of its choices (x)`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// When
+			got, err := processor.RenderInput(config, tt.input)
+
+			// Then
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("RenderInput() error = %v, want error containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RenderInput() error = %v", err)
+			}
+			tt.check(t, got)
+		})
+	}
+
+	// And the config it was given is not changed
+	if config.Inputs["module"].Default != "github.com/{{.Inputs.owner.Value}}/{{.Inputs.name.Value}}" {
+		t.Errorf("RenderInput changed the config: %+v", config.Inputs["module"])
+	}
+}
+
+func TestProcessor_ApplyTemplate_TemplatedValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  ProjectTemplate
+		files   map[string]string
+		want    map[string]string
+		absent  []string
+		wantErr string
+	}{
+		{
+			name: "env values are rendered from the inputs and used by files",
+			config: ProjectTemplate{
+				Inputs: map[string]Input{"owner": {Value: "me"}, "name": {Value: "app"}},
+				Env:    map[string]any{"Module": "github.com/{{.Inputs.owner.Value}}/{{.Inputs.name.Value}}", "Year": 2026},
+			},
+			files: map[string]string{"go.mod": "module {{.Env.Module}} // {{.Env.Year}}"},
+			want:  map[string]string{"go.mod": "module github.com/me/app // 2026"},
+		},
+		{
+			name: "env values cannot refer to other env values",
+			config: ProjectTemplate{
+				Inputs: map[string]Input{"name": {Value: "app"}},
+				Env:    map[string]any{"A": "{{.Inputs.name.Value}}", "B": "{{.Env.A}}"},
+			},
+			files:   map[string]string{"a.txt": "x"},
+			wantErr: `env "B"`,
+		},
+		{
+			name: "exclude and raw patterns are rendered",
+			config: ProjectTemplate{
+				Inputs:  map[string]Input{"kind": {Value: "cli"}},
+				Raw:     []string{"{{.Inputs.kind.Value}}-raw"},
+				Exclude: []Exclusion{{Paths: []string{"{{.Inputs.kind.Value}}-only", "plain.txt"}, When: "true"}},
+			},
+			files:  map[string]string{"cli-only/a.txt": "x", "plain.txt": "x", "cli-raw/b.txt": "{{ keep }}", "c.txt": "{{.Inputs.kind.Value}}"},
+			want:   map[string]string{"cli-raw/b.txt": "{{ keep }}", "c.txt": "cli"},
+			absent: []string{"cli-only", "plain.txt"},
+		},
+		{
+			name: "a pattern that renders to an invalid glob is an error",
+			config: ProjectTemplate{
+				Inputs:  map[string]Input{"p": {Value: "[x"}},
+				Exclude: []Exclusion{{Path: "{{.Inputs.p.Value}}", When: "true"}},
+			},
+			files:   map[string]string{"a.txt": "x"},
+			wantErr: `exclude pattern "{{.Inputs.p.Value}}" renders as "[x", which is not a valid glob`,
+		},
+		{
+			name: "rename paths are rendered and may use env",
+			config: ProjectTemplate{
+				Inputs: map[string]Input{"name": {Value: "app"}},
+				Env:    map[string]any{"Dir": "svc-{{.Inputs.name.Value}}"},
+				Rename: []Renaming{{From: "src", To: "{{.Env.Dir}}/code"}},
+			},
+			files:  map[string]string{"src/main.go": "package main"},
+			want:   map[string]string{"svc-app/code/main.go": "package main"},
+			absent: []string{"src"},
+		},
+		{
+			name: "from names the path as it was rendered",
+			config: ProjectTemplate{
+				Inputs: map[string]Input{"name": {Value: "app"}},
+				Rename: []Renaming{{From: "cmd/{{.Inputs.name.Value}}", To: "cmd/main"}},
+			},
+			files: map[string]string{"cmd/{{.Inputs.name.Value}}/main.go": "package main"},
+			want:  map[string]string{"cmd/main/main.go": "package main"},
+		},
+		{
+			name: "rename is skipped when its condition is false and applied when true",
+			config: ProjectTemplate{
+				Inputs: map[string]Input{"kind": {Value: "service"}},
+				Rename: []Renaming{
+					{From: "Makefile.cli", To: "Makefile", When: `{{eq .Inputs.kind.Value "cli"}}`},
+					{From: "Makefile.service", To: "Makefile", When: `{{eq .Inputs.kind.Value "service"}}`},
+				},
+			},
+			files:  map[string]string{"Makefile.cli": "cli", "Makefile.service": "service"},
+			want:   map[string]string{"Makefile": "service", "Makefile.cli": "cli"},
+			absent: []string{"Makefile.service"},
+		},
+		{
+			name: "rename condition must be a boolean",
+			config: ProjectTemplate{
+				Inputs: map[string]Input{"kind": {Value: "cli"}},
+				Rename: []Renaming{{From: "a", To: "b", When: "{{.Inputs.kind.Value}}"}},
+			},
+			files:   map[string]string{"a": "x"},
+			wantErr: `rename "a": when must render as true or false, got "cli"`,
+		},
+		{
+			name: "a rendered rename path cannot leave the project",
+			config: ProjectTemplate{
+				Inputs: map[string]Input{"to": {Value: "../escaped"}},
+				Rename: []Renaming{{From: "a", To: "{{.Inputs.to.Value}}"}},
+			},
+			files:   map[string]string{"a": "x"},
+			wantErr: `rename "a": to: "../escaped" is not a path inside the project`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			dest := t.TempDir()
+			_ = os.WriteFile(filepath.Join(dest, TemplateConfigName), []byte(""), 0644)
+			for rel, content := range tt.files {
+				full := filepath.Join(dest, filepath.FromSlash(rel))
+				_ = os.MkdirAll(filepath.Dir(full), 0755)
+				_ = os.WriteFile(full, []byte(content), 0644)
+			}
+
+			// When
+			err := NewTemplateProcessor(NewRendererService()).ApplyTemplate(tt.config, dest)
+
+			// Then
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("ApplyTemplate() error = %v, want error containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ApplyTemplate() error = %v", err)
+			}
+
+			// And
+			for rel, content := range tt.want {
+				got, err := os.ReadFile(filepath.Join(dest, filepath.FromSlash(rel)))
+				if err != nil || string(got) != content {
+					t.Errorf("%s = %q (%v), want %q", rel, got, err, content)
+				}
+			}
+			for _, rel := range tt.absent {
+				if _, err := os.Stat(filepath.Join(dest, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+					t.Errorf("Expected %s to be absent, stat err = %v", rel, err)
+				}
+			}
+		})
+	}
+}

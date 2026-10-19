@@ -19,6 +19,7 @@ description: Makes things
 inputs:
   name: {description: Project name}
   kind: {description: What to make, default: cli, choices: [cli, service]}
+  module: {default: 'github.com/{{.Inputs.name.Value}}'}
 raw: [.github]
 exclude:
   - path: a
@@ -48,14 +49,17 @@ rename:
 				if strings.Contains(got.Source, "secret") {
 					t.Errorf("source leaks credentials: %q", got.Source)
 				}
-				if len(got.Inputs) != 2 || got.Inputs[0].Name != "kind" || got.Inputs[1].Name != "name" {
+				if len(got.Inputs) != 3 || got.Inputs[0].Name != "kind" || got.Inputs[1].Name != "module" || got.Inputs[2].Name != "name" {
 					t.Fatalf("inputs should be sorted by name: %+v", got.Inputs)
+				}
+				if got.Inputs[1].Default != "github.com/{{.Inputs.name.Value}}" || strings.Join(got.Inputs[1].DependsOn, ",") != "name" || got.Inputs[1].Required {
+					t.Errorf("module should show its template and what it depends on: %+v", got.Inputs[1])
 				}
 				if got.Inputs[0].Required || got.Inputs[0].Default != "cli" || len(got.Inputs[0].Choices) != 2 {
 					t.Errorf("kind = %+v", got.Inputs[0])
 				}
-				if !got.Inputs[1].Required {
-					t.Errorf("an input without a default must be required: %+v", got.Inputs[1])
+				if !got.Inputs[2].Required {
+					t.Errorf("an input without a default must be required: %+v", got.Inputs[2])
 				}
 				if len(got.Raw) != 1 || got.Raw[0] != ".github" {
 					t.Errorf("raw = %v", got.Raw)

@@ -156,6 +156,8 @@ type Command interface {
 
 The Go types in `internal/templates/definitions.go` and `Validate` are the source of truth for the config format. `skelly.schema.json` mirrors the structure for editors only, so any change to the config's shape (a new key, a new accepted form) must be made in both, and `internal/templates/schema_test.go` must keep passing: it fails if the schema and `Validate` disagree. Document new keys in the README as well.
 
+Values in the config are templates where it says so in `definitions.go` (input `description`/`default`/`choices`, `env` values, `raw` and `exclude` patterns, `when`, `rename` paths). Inputs are asked in dependency order (`InputLayers`), and `Validate` rejects cycles and unknown references, so keep new templated fields in `inputTemplates` and `Validate`.
+
 `raw` and `exclude` patterns use doublestar globs (`**` crosses directories). Keep new commands scriptable: no prompt without a way to answer it by flag, and anything meant for a program goes to stdout as JSON while errors go to stderr.
 
 ### Filesystem Safety

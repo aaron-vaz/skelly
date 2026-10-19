@@ -750,3 +750,146 @@ rename:
 		assertAbsent(t, filepath.Dir(destDir), "escaped.txt")
 	})
 }
+
+func TestIntegration_TemplatedConfig(t *testing.T) {
+	config := `
+inputs:
+  name: {description: Project name}
+  owner: {description: Who owns it, default: me}
+  module:
+    description: 'Module of {{.Inputs.name.Value}}'
+    default: 'github.com/{{.Inputs.owner.Value}}/{{.Inputs.name.Value}}'
+  kind: {default: cli, choices: [cli, service]}
+env:
+  image: 'ghcr.io/{{.Inputs.owner.Value}}/{{.Inputs.name.Value}}'
+raw: ['{{.Inputs.kind.Value}}-raw']
+exclude:
+  - path: '{{.Inputs.kind.Value}}-gone'
+    when: "true"
+rename:
+  - from: tmpl-{{.Inputs.name.Value}}
+    to: 'apps/{{.Inputs.name.Value}}'
+  - from: Makefile.service
+    to: Makefile
+    when: '{{eq .Inputs.kind.Value "service"}}'
+`
+	files := func() map[string]string {
+		return map[string]string{
+			".skelly.yml":                         config,
+			"go.mod":                              "module {{.Inputs.module.Value}}\n// {{.Env.image}}",
+			"tmpl-{{.Inputs.name.Value}}/main.go": "package main",
+			"cli-raw/a.txt":                       "{{ not rendered }}",
+			"cli-gone/b.txt":                      "{{ never rendered }",
+			"Makefile.service":                    "service",
+		}
+	}
+
+	t.Run("prompts in dependency order and renders every templated value", func(t *testing.T) {
+		// Given
+		srcDir := writeTemplate(t, files())
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When inputs are asked in layers: kind, name and owner, then module
+		res := runSkelly(t, "\napp\n\n\n", nil, "init", srcDir, "-dst", destDir)
+
+		// Then
+		if res.err != nil {
+			t.Fatalf("init failed: %v\n%s%s", res.err, res.stdout, res.stderr)
+		}
+		if !strings.Contains(res.stdout, "Module of app: [github.com/me/app]") {
+			t.Errorf("Expected the rendered description and default to be shown, got %s", res.stdout)
+		}
+		assertContent(t, filepath.Join(destDir, "go.mod"), "module github.com/me/app\n// ghcr.io/me/app")
+		assertContent(t, filepath.Join(destDir, "apps", "app", "main.go"), "package main")
+		assertContent(t, filepath.Join(destDir, "cli-raw", "a.txt"), "{{ not rendered }}")
+		assertAbsent(t, destDir, "cli-gone", "Makefile", "tmpl-app")
+		assertExists(t, destDir, "Makefile.service")
+	})
+
+	t.Run("-set and -no-input resolve the same values, with conditions applied", func(t *testing.T) {
+		// Given the raw and excluded paths of the service kind
+		service := files()
+		delete(service, "cli-raw/a.txt")
+		delete(service, "cli-gone/b.txt")
+		service["service-raw/a.txt"] = "{{ not rendered }}"
+		service["service-gone/b.txt"] = "{{ never rendered }"
+		srcDir := writeTemplate(t, service)
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input", "-set", "name=app", "-set", "owner=you", "-set", "kind=service")
+
+		// Then
+		if res.err != nil {
+			t.Fatalf("init failed: %v\n%s%s", res.err, res.stdout, res.stderr)
+		}
+		assertContent(t, filepath.Join(destDir, "go.mod"), "module github.com/you/app\n// ghcr.io/you/app")
+		assertContent(t, filepath.Join(destDir, "Makefile"), "service")
+		assertContent(t, filepath.Join(destDir, "service-raw", "a.txt"), "{{ not rendered }}")
+		assertAbsent(t, destDir, "Makefile.service", "service-gone")
+	})
+
+	t.Run("inspect shows templates and what they depend on", func(t *testing.T) {
+		// Given
+		srcDir := writeTemplate(t, files())
+
+		// When
+		res := runSkelly(t, "", nil, "inspect", srcDir)
+
+		// Then
+		var got struct {
+			Inputs []struct {
+				Name      string   `json:"name"`
+				Default   any      `json:"default"`
+				DependsOn []string `json:"dependsOn"`
+			}
+		}
+		if res.err != nil || json.Unmarshal([]byte(res.stdout), &got) != nil {
+			t.Fatalf("inspect failed: %v\n%s%s", res.err, res.stdout, res.stderr)
+		}
+		for _, in := range got.Inputs {
+			if in.Name == "module" && (strings.Join(in.DependsOn, ",") != "name,owner" || !strings.Contains(in.Default.(string), "{{.Inputs.owner.Value}}")) {
+				t.Errorf("module = %+v", in)
+			}
+			if in.Name == "name" && len(in.DependsOn) != 0 {
+				t.Errorf("name should depend on nothing: %+v", in)
+			}
+		}
+	})
+
+	t.Run("a cycle between inputs is rejected before anything is written", func(t *testing.T) {
+		// Given
+		srcDir := writeTemplate(t, map[string]string{
+			".skelly.yml": "inputs:\n  a: {default: '{{.Inputs.b.Value}}'}\n  b: {default: '{{.Inputs.a.Value}}'}\n",
+		})
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input")
+
+		// Then
+		if res.err == nil || !strings.Contains(res.stderr, "inputs use each other in a cycle") {
+			t.Errorf("Expected a cycle error, got %v: %s", res.err, res.stderr)
+		}
+		assertAbsent(t, destDir)
+	})
+
+	t.Run("a template that does not parse is rejected when loaded", func(t *testing.T) {
+		// Given
+		srcDir := writeTemplate(t, map[string]string{
+			".skelly.yml": "inputs:\n  a: {default: '{{.Inputs.nope.Value}}'}\nenv:\n  x: '{{end}}'\n",
+		})
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input")
+
+		// Then
+		for _, want := range []string{`input "a": default uses unknown input "nope"`, `env "x":`} {
+			if res.err == nil || !strings.Contains(res.stderr, want) {
+				t.Errorf("Expected %q, got %v: %s", want, res.err, res.stderr)
+			}
+		}
+		assertAbsent(t, destDir)
+	})
+}
