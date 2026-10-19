@@ -203,8 +203,11 @@ func (p *Processor) renderPath(config ProjectTemplate, name string, text string)
 	}
 
 	cleaned := cleanPath(rendered)
-	if !filepath.IsLocal(cleaned) || cleaned == TemplateConfigName {
+	if !filepath.IsLocal(cleaned) || cleaned == "." || cleaned == TemplateConfigName {
 		return "", fmt.Errorf("%q is not a path inside the project", rendered)
+	}
+	if touchesSkipped(cleaned) {
+		return "", fmt.Errorf("%q would use a directory that is never copied from a template (%s)", rendered, strings.Join(dirsToSkip, ", "))
 	}
 	return cleaned, nil
 }
@@ -430,6 +433,9 @@ func (p *Processor) renameEntry(root *os.Root, config ProjectTemplate, rel strin
 	if !filepath.IsLocal(rendered) {
 		return fmt.Errorf("rendered name %q is empty or points outside its directory", rendered)
 	}
+	if touchesSkipped(rendered) {
+		return fmt.Errorf("rendered name %q would create a directory that is never copied from a template (%s)", rendered, strings.Join(dirsToSkip, ", "))
+	}
 
 	target := path.Join(parent, rendered)
 	if _, err := root.Lstat(target); err == nil {
@@ -456,6 +462,22 @@ func (p *Processor) RemoveTemplateMetadata(dir string) error {
 	defer func() { _ = root.Close() }()
 
 	return removeSkippedDirs(root)
+}
+
+// touchesSkipped reports whether any element of rel names a directory that is
+// never copied, such as .git. The template's own copy is stripped, so a rendered
+// name or a rename must not be able to bring one back: a .git directory in a
+// generated project is used by git, hooks included. Names are compared without
+// regard to case, as a case-insensitive filesystem treats .GIT as .git.
+func touchesSkipped(rel string) bool {
+	for _, element := range strings.Split(filepath.ToSlash(rel), "/") {
+		for _, skip := range dirsToSkip {
+			if strings.EqualFold(element, skip) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func removeSkippedDirs(root *os.Root) error {

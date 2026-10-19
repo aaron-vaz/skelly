@@ -131,6 +131,28 @@ rename:
 			},
 		},
 		{
+			name: "renames cannot use .git or the whole project",
+			config: `
+rename:
+  - from: a
+    to: .git/hooks
+  - from: .GIT
+    to: b
+  - from: x/.git/y
+    to: c
+  - from: .
+    to: d
+  - from: e
+    to: ./`,
+			wantErr: []string{
+				`rename "a" to ".git/hooks": a directory that is never copied from a template (.git) cannot be used`,
+				`rename ".GIT" to "b": a directory that is never copied`,
+				`rename "x/.git/y" to "c": a directory that is never copied`,
+				`rename "." to "d": paths must be relative and stay inside the project`,
+				`rename "e" to "./": paths must be relative and stay inside the project`,
+			},
+		},
+		{
 			name:   "recursive raw pattern",
 			config: `raw: ["**/*.tpl"]`,
 		},
@@ -248,6 +270,31 @@ inputs:
   c: {default: '{{.Inputs.a.Value}}'}
   d: {default: fine}`,
 			wantErr: []string{"inputs use each other in a cycle, involving: a, b, c"},
+		},
+		{
+			name: "references through a variable are found, so the order is right",
+			config: `
+inputs:
+  a: {default: x}
+  b: {default: '{{$.Inputs.a.Value}}'}
+  c: {default: '{{with .Inputs.b}}{{.Value}}{{end}}'}
+  d: {default: '{{$x := .Inputs.c}}{{$x.Value}}'}`,
+		},
+		{
+			name: "reaching the inputs without naming one cannot be ordered",
+			config: `
+inputs:
+  a: {default: x}
+  b: {default: '{{index .Inputs "a"}}'}
+  c: {default: '{{with .Inputs}}{{.a.Value}}{{end}}'}
+  d: {default: '{{range $k, $v := .Inputs}}{{$k}}{{end}}'}
+  e: {default: '{{$.Inputs}}'}`,
+			wantErr: []string{
+				`input "b": default: uses .Inputs without naming an input`,
+				`input "c": default: uses .Inputs without naming an input`,
+				`input "d": default: uses .Inputs without naming an input`,
+				`input "e": default: uses .Inputs without naming an input`,
+			},
 		},
 		{
 			name: "a templated default is not compared with literal choices until it is rendered",

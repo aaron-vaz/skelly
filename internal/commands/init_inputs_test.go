@@ -423,3 +423,66 @@ func TestInitCommand_Run_DerivedInputs(t *testing.T) {
 		})
 	}
 }
+
+func TestInitCommand_Run_TypedAnswers(t *testing.T) {
+	files := map[string]string{
+		templates.TemplateConfigName: "inputs:\n  enabled: {default: true}\n  count: {default: 3}\n  ratio: {default: 0.5}\n  name: {default: x}\n",
+		"out.txt":                    "{{if .Inputs.enabled.Value}}on{{else}}off{{end}} {{if eq .Inputs.count.Value 4}}four{{else}}other{{end}} {{.Inputs.ratio.Value}} {{.Inputs.name.Value}}",
+	}
+
+	tests := []struct {
+		name     string
+		args     []string
+		prompted map[string]string
+		wantFile string
+		wantErr  []string
+	}{
+		{name: "defaults keep their types", args: []string{"-no-input"}, wantFile: "on other 0.5 x"},
+		{name: "-set follows the type of the default", args: []string{"-no-input", "-set", "enabled=false", "-set", "count=4", "-set", "ratio=1.5"}, wantFile: "off four 1.5 x"},
+		{name: "text stays text", args: []string{"-no-input", "-set", "name=false"}, wantFile: "on other 0.5 false"},
+		{name: "what is typed at the prompt follows the type too", prompted: map[string]string{"enabled": "false", "count": "4"}, wantFile: "off four 0.5 x"},
+		{
+			name: "values of the wrong type are rejected, all at once",
+			args: []string{"-no-input", "-set", "enabled=maybe", "-set", "count=many", "-set", "ratio=half"},
+			wantErr: []string{
+				`input "enabled" must be true or false`,
+				`input "count" must be a whole number`,
+				`input "ratio" must be a number`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			dest := filepath.Join(t.TempDir(), "dest")
+			ui := &askingUI{answers: tt.prompted}
+			cmd := NewInitCommand(templates.NewTemplateProcessor(templates.NewRendererService()), &fileDownloader{files: files}, &mockStore{}, ui)
+			flags := flag.NewFlagSet("init", flag.ContinueOnError)
+			cmd.Init(flags)
+			if err := flags.Parse(append([]string{"-dst", dest}, tt.args...)); err != nil {
+				t.Fatalf("failed to parse flags: %v", err)
+			}
+
+			// When
+			err := cmd.Run(context.Background(), []string{"http://example.com/t"})
+
+			// Then
+			if len(tt.wantErr) > 0 {
+				if err == nil {
+					t.Fatalf("Run() error = nil, want %v", tt.wantErr)
+				}
+				for _, want := range tt.wantErr {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("Run() error = %q, want it to contain %q", err, want)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			assertFile(t, filepath.Join(dest, "out.txt"), tt.wantFile)
+		})
+	}
+}

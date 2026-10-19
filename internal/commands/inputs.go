@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/aaron-vaz/skelly/internal/templates"
@@ -84,7 +85,11 @@ func (c *InitCommand) collectInputs(ctx context.Context, tmpl *templates.Project
 				blocked[name] = true
 				continue
 			}
-			input.Value = answer
+			if input.Value, err = typedAnswer(name, input.Default, answer); err != nil {
+				errs = append(errs, err)
+				blocked[name] = true
+				continue
+			}
 			tmpl.Inputs[name] = input
 		}
 
@@ -101,6 +106,13 @@ func (c *InitCommand) collectInputs(ctx context.Context, tmpl *templates.Project
 			return err
 		}
 		for name, input := range pending {
+			// What the user typed is text, but a default of true or 3 is not
+			if text, ok := input.Value.(string); ok && !blocked[name] {
+				if input.Value, err = typedAnswer(name, input.Default, text); err != nil {
+					errs = append(errs, err)
+					blocked[name] = true
+				}
+			}
 			tmpl.Inputs[name] = input
 		}
 	}
@@ -110,6 +122,33 @@ func (c *InitCommand) collectInputs(ctx context.Context, tmpl *templates.Project
 		errs = append(errs, fmt.Errorf("missing required inputs: %s (pass them with -set name=value)", strings.Join(missing, ", ")))
 	}
 	return errors.Join(errs...)
+}
+
+// typedAnswer reads an answer as the type of the input's default, so that
+// "-set enabled=false" is the false that a default of false would be, and not
+// the text "false", which a template's {{if}} treats as true.
+func typedAnswer(name string, def any, answer string) (any, error) {
+	switch def.(type) {
+	case bool:
+		value, err := strconv.ParseBool(answer)
+		if err != nil {
+			return nil, fmt.Errorf("input %q must be true or false", name)
+		}
+		return value, nil
+	case int, int64, uint64:
+		value, err := strconv.Atoi(answer)
+		if err != nil {
+			return nil, fmt.Errorf("input %q must be a whole number", name)
+		}
+		return value, nil
+	case float64:
+		value, err := strconv.ParseFloat(answer, 64)
+		if err != nil {
+			return nil, fmt.Errorf("input %q must be a number", name)
+		}
+		return value, nil
+	}
+	return answer, nil
 }
 
 // unknownAnswers reports the answers that name no input of the template.

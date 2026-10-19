@@ -260,8 +260,8 @@ func inputIsTemplated(input Input) bool {
 }
 
 // inputRefs returns the names of the inputs a template reads, found by walking
-// the parsed template for .Inputs.<name>. An input reached any other way, such
-// as with index, cannot be seen and so is not ordered.
+// the parsed template for .Inputs.<name>. A template that reaches the inputs any
+// other way, such as with index or with, cannot be ordered and is an error.
 func inputRefs(text string) ([]string, error) {
 	if !isTemplated(text) {
 		return nil, nil
@@ -273,16 +273,29 @@ func inputRefs(text string) ([]string, error) {
 	}
 
 	var refs []string
-	walkTemplate(parsed.Root, func(field *parse.FieldNode) {
-		if len(field.Ident) >= 2 && field.Ident[0] == "Inputs" {
-			refs = append(refs, field.Ident[1])
+	opaque := false
+	walkTemplate(parsed.Root, func(ident []string) {
+		// A variable starts with the variable's name, so $.Inputs.A is $, Inputs, A
+		if len(ident) > 0 && ident[0] == "$" {
+			ident = ident[1:]
+		}
+		switch {
+		case len(ident) == 0 || ident[0] != "Inputs":
+		case len(ident) == 1:
+			opaque = true
+		default:
+			refs = append(refs, ident[1])
 		}
 	})
+	if opaque {
+		return nil, errors.New("uses .Inputs without naming an input, so the order the inputs are asked in cannot be worked out; write .Inputs.<name>.Value")
+	}
 	return refs, nil
 }
 
-// walkTemplate calls visit for every field reference in the parse tree.
-func walkTemplate(node parse.Node, visit func(*parse.FieldNode)) {
+// walkTemplate calls visit with the path of every field or variable reference
+// in the parse tree.
+func walkTemplate(node parse.Node, visit func(ident []string)) {
 	switch n := node.(type) {
 	case *parse.ListNode:
 		if n == nil {
@@ -305,7 +318,9 @@ func walkTemplate(node parse.Node, visit func(*parse.FieldNode)) {
 			walkTemplate(arg, visit)
 		}
 	case *parse.FieldNode:
-		visit(n)
+		visit(n.Ident)
+	case *parse.VariableNode:
+		visit(n.Ident)
 	case *parse.ChainNode:
 		walkTemplate(n.Node, visit)
 	case *parse.TemplateNode:
@@ -319,7 +334,7 @@ func walkTemplate(node parse.Node, visit func(*parse.FieldNode)) {
 	}
 }
 
-func walkBranch(branch parse.BranchNode, visit func(*parse.FieldNode)) {
+func walkBranch(branch parse.BranchNode, visit func(ident []string)) {
 	walkTemplate(branch.Pipe, visit)
 	walkTemplate(branch.List, visit)
 	walkTemplate(branch.ElseList, visit)
@@ -375,8 +390,11 @@ func (t ProjectTemplate) validateRenames() []error {
 
 		from, to := cleanPath(rename.From), cleanPath(rename.To)
 		switch {
-		case !filepath.IsLocal(from) || !filepath.IsLocal(to):
+		case !filepath.IsLocal(from) || !filepath.IsLocal(to) || from == "." || to == ".":
 			errs = append(errs, fmt.Errorf("rename %q to %q: paths must be relative and stay inside the project", rename.From, rename.To))
+			continue
+		case touchesSkipped(from) || touchesSkipped(to):
+			errs = append(errs, fmt.Errorf("rename %q to %q: a directory that is never copied from a template (%s) cannot be used", rename.From, rename.To, strings.Join(dirsToSkip, ", ")))
 			continue
 		case from == to:
 			errs = append(errs, fmt.Errorf("rename %q: from and to are the same", rename.From))
@@ -403,7 +421,8 @@ func isTemplated(text string) bool {
 }
 
 // checkTemplate reports a syntax error in text, so it is found when the
-// template is loaded and not halfway through rendering.
+// template is loaded and not halfway through rendering. What a template renders
+// to depends on the answers, so that can only be checked when it is rendered.
 func checkTemplate(text string) error {
 	_, err := template.New("").Option("missingkey=error").Parse(text)
 	return err

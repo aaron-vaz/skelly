@@ -840,3 +840,80 @@ func TestProcessor_ApplyTemplate_TemplatedValues(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessor_ApplyTemplate_NeverRecreatesGitDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  ProjectTemplate
+		files   map[string]string
+		wantErr string
+	}{
+		{
+			name:    "a rename cannot target .git",
+			config:  ProjectTemplate{Rename: []Renaming{{From: "gh", To: "{{.Inputs.d.Value}}/hooks"}}, Inputs: map[string]Input{"d": {Value: ".git"}}},
+			files:   map[string]string{"gh/pre-commit": "#!/bin/sh"},
+			wantErr: `rename "gh": to: ".git/hooks" would use a directory that is never copied`,
+		},
+		{
+			name:    "case does not matter, as some filesystems ignore it",
+			config:  ProjectTemplate{Rename: []Renaming{{From: "gh", To: "{{.Inputs.d.Value}}"}}, Inputs: map[string]Input{"d": {Value: "sub/.GIT"}}},
+			files:   map[string]string{"gh/pre-commit": "#!/bin/sh"},
+			wantErr: "never copied",
+		},
+		{
+			name:    "a rename cannot start from .git either",
+			config:  ProjectTemplate{Rename: []Renaming{{From: "{{.Inputs.d.Value}}", To: "x"}}, Inputs: map[string]Input{"d": {Value: ".git"}}},
+			files:   map[string]string{"a": "x"},
+			wantErr: "never copied",
+		},
+		{
+			name:    "a rename cannot move the whole project",
+			config:  ProjectTemplate{Rename: []Renaming{{From: "a", To: "{{.Inputs.d.Value}}"}}, Inputs: map[string]Input{"d": {Value: "."}}},
+			files:   map[string]string{"a": "x"},
+			wantErr: `"." is not a path inside the project`,
+		},
+		{
+			name:    "a rendered directory name cannot become .git",
+			config:  ProjectTemplate{Env: map[string]any{"d": ".git"}},
+			files:   map[string]string{"{{.Env.d}}/pre-commit": "#!/bin/sh"},
+			wantErr: `rendered name ".git" would create a directory that is never copied`,
+		},
+		{
+			name:    "a rendered file name cannot place a file inside .git",
+			config:  ProjectTemplate{Env: map[string]any{"d": "x/.git/hooks"}},
+			files:   map[string]string{"{{.Env.d}}": "#!/bin/sh"},
+			wantErr: "never copied",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			dest := t.TempDir()
+			_ = os.WriteFile(filepath.Join(dest, TemplateConfigName), []byte(""), 0644)
+			for rel, content := range tt.files {
+				full := filepath.Join(dest, filepath.FromSlash(rel))
+				_ = os.MkdirAll(filepath.Dir(full), 0755)
+				_ = os.WriteFile(full, []byte(content), 0644)
+			}
+
+			// When
+			err := NewTemplateProcessor(NewRendererService()).ApplyTemplate(tt.config, dest)
+
+			// Then
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("ApplyTemplate() error = %v, want error containing %q", err, tt.wantErr)
+			}
+			found := false
+			_ = filepath.WalkDir(dest, func(p string, d os.DirEntry, _ error) error {
+				if strings.EqualFold(d.Name(), ".git") {
+					found = true
+				}
+				return nil
+			})
+			if found {
+				t.Errorf("a .git directory was created")
+			}
+		})
+	}
+}

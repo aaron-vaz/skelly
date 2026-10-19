@@ -893,3 +893,104 @@ rename:
 		assertAbsent(t, destDir)
 	})
 }
+
+func TestIntegration_NeverRecreatesGitDir(t *testing.T) {
+	findGit := func(dir string) string {
+		var found string
+		_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, _ error) error {
+			if strings.EqualFold(d.Name(), ".git") {
+				found = p
+			}
+			return nil
+		})
+		return found
+	}
+
+	tests := []struct {
+		name  string
+		files map[string]string
+	}{
+		{
+			name: "a rename cannot plant git hooks",
+			files: map[string]string{
+				".skelly.yml":   "rename:\n  - from: gh\n    to: .git/hooks\n",
+				"gh/pre-commit": "#!/bin/sh\necho pwned\n",
+			},
+		},
+		{
+			name: "a templated rename cannot either",
+			files: map[string]string{
+				".skelly.yml":   "env:\n  d: .git\nrename:\n  - from: gh\n    to: '{{.Env.d}}/hooks'\n",
+				"gh/pre-commit": "#!/bin/sh\n",
+			},
+		},
+		{
+			name: "a rendered directory name cannot become .git",
+			files: map[string]string{
+				".skelly.yml":           "env:\n  d: .git\n",
+				"{{.Env.d}}/pre-commit": "#!/bin/sh\n",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			srcDir := writeTemplate(t, tt.files)
+			destDir := filepath.Join(t.TempDir(), "dest")
+
+			// When
+			res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input")
+
+			// Then
+			if res.err == nil || !strings.Contains(res.stderr, "never copied") {
+				t.Errorf("Expected a refusal, got %v: %s", res.err, res.stderr)
+			}
+			assertAbsent(t, destDir)
+			if found := findGit(filepath.Dir(destDir)); found != "" {
+				t.Errorf("a .git directory was created at %s", found)
+			}
+		})
+	}
+}
+
+func TestIntegration_TypedSetAnswers(t *testing.T) {
+	// Given a boolean input, which a template's {{if}} must see as a boolean
+	srcDir := writeTemplate(t, map[string]string{
+		".skelly.yml": "inputs:\n  docker: {default: true}\n",
+		"out.txt":     "{{if .Inputs.docker.Value}}docker{{else}}no docker{{end}}",
+	})
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+		err  string
+	}{
+		{name: "default", args: []string{}, want: "docker"},
+		{name: "-set false is false", args: []string{"-set", "docker=false"}, want: "no docker"},
+		{name: "-set true is true", args: []string{"-set", "docker=true"}, want: "docker"},
+		{name: "not a boolean", args: []string{"-set", "docker=nope"}, err: `input "docker" must be true or false`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			destDir := filepath.Join(t.TempDir(), "dest")
+
+			// When
+			res := runSkelly(t, "", nil, append([]string{"init", srcDir, "-dst", destDir, "-no-input"}, tt.args...)...)
+
+			// Then
+			if tt.err != "" {
+				if res.err == nil || !strings.Contains(res.stderr, tt.err) {
+					t.Errorf("Expected %q, got %v: %s", tt.err, res.err, res.stderr)
+				}
+				return
+			}
+			if res.err != nil {
+				t.Fatalf("init failed: %v\n%s", res.err, res.stderr)
+			}
+			assertContent(t, filepath.Join(destDir, "out.txt"), tt.want)
+		})
+	}
+}
