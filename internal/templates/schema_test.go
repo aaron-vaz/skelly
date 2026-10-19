@@ -104,11 +104,11 @@ exclude:
 		{name: "blank input name", config: "inputs:\n  ' ': {default: x}", valid: false},
 		{name: "raw must be a list", config: `raw: .github`, valid: false},
 		{name: "blank raw pattern", config: `raw: [" "]`, valid: false},
-		{name: "exclude without when", config: "exclude:\n  - path: a", valid: false},
+		{name: "exclude without when", config: "exclude:\n  - path: a", valid: true},
 		{name: "exclude without a path", config: "exclude:\n  - when: 'true'", valid: false},
 		{name: "exclude with empty paths", config: "exclude:\n  - paths: []\n    when: 'true'", valid: false},
 		{name: "exclude with blank path", config: "exclude:\n  - path: ''\n    when: 'true'", valid: false},
-		{name: "exclude with blank when", config: "exclude:\n  - path: a\n    when: ''", valid: false},
+		{name: "exclude with blank when", config: "exclude:\n  - path: a\n    when: ''", valid: true},
 		{name: "exclude with unknown key", config: "exclude:\n  - path: a\n    when: 'true'\n    pth: b", valid: false},
 	}
 

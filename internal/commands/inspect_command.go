@@ -31,7 +31,8 @@ type inspectInput struct {
 
 type inspectExclusion struct {
 	Paths []string `json:"paths"`
-	When  string   `json:"when"`
+	// When is left out for paths that are always excluded
+	When string `json:"when,omitempty"`
 }
 
 type inspectRename struct {

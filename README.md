@@ -138,12 +138,13 @@ inputs:
 # Values for templates to use as {{.Env.image}}. A string is itself a template that can use the inputs.
 env:
   image: ghcr.io/{{.Inputs.author.Value}}/{{.Inputs.project_name.Value}}
-# Paths left out of the generated project when the condition renders as true.
+# Paths left out of the generated project when the condition renders as true, or always without one.
 exclude:
   - paths: [internal/server, Dockerfile]   # several paths can share one condition
     when: '{{eq .Inputs.project_type.Value "cli"}}'
   - path: "**/*_test.go"                    # ** matches across directories
     when: "false"
+  - path: TEMPLATE.md                       # without a when, always excluded: the template's own files
 # Paths moved once the project is rendered, so that files meant for generated projects
 # can sit under an inert name in the template's own repository (see the notes below).
 rename:
@@ -165,7 +166,7 @@ Notes:
 
 *   Referencing an input that is not defined is an error, rather than silently rendering `<no value>`.
 *   `.skelly.yml` is validated up front: input names must not be blank, defaults must be a string, number or boolean, and `raw` and `exclude` patterns must be valid globs, and `rename` paths must stay inside the project.
-*   `exclude` lets one template produce several variants. `path` (or `paths`, for several globs sharing one condition) is matched like `raw` patterns (a file's path, its name, or any parent directory) and `when` is rendered as a template that must produce `true` or `false`. Excluded paths are removed before anything is rendered, and `exclude` also applies to `raw` files, so a raw CI workflow can still be left out conditionally.
+*   `exclude` lets one template produce several variants. `path` (or `paths`, for several globs sharing one condition) is matched like `raw` patterns (a file's path, its name, or any parent directory) and `when` is rendered as a template that must produce `true` or `false` (leave it out to always exclude, as for the template's own files). Excluded paths are removed before anything is rendered, and `exclude` also applies to `raw` files, so a raw CI workflow can still be left out conditionally.
 *   Globs use [doublestar](https://github.com/bmatcuk/doublestar) syntax for `raw` and `exclude`: `*` and `?` stay within a directory, `**` matches across directories (`docs/**/*.md`, `**/*_test.go`), and `{a,b}` matches alternatives.
 *   Because `raw` and `exclude` patterns are doublestar globs and templates, `{` and `}` mean alternatives (escape a literal brace with `\`) and `{{` starts a template. Patterns written for earlier versions that contain braces need that escape.
 *   A template can never create a `.git` directory in the generated project, however the name is produced: its own `.git` is not copied, and a rendered file or directory name or a `rename` that would bring one back is an error, since git runs the hooks inside it.

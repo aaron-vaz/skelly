@@ -325,6 +325,14 @@ func TestProcessor_ApplyTemplate_Exclude(t *testing.T) {
 			absent:  []string{"a.tmpl"},
 		},
 		{
+			name:    "without a condition the paths are always excluded",
+			kind:    "service",
+			exclude: []Exclusion{{Path: "TEMPLATE.md"}, {Paths: []string{"a.txt", "b.txt"}, When: "  "}},
+			files:   map[string]string{"TEMPLATE.md": "{{ never rendered }", "a.txt": "x", "b.txt": "x", "main.go": "package main"},
+			want:    []string{"main.go"},
+			absent:  []string{"TEMPLATE.md", "a.txt", "b.txt"},
+		},
+		{
 			name:    "paths share a single condition",
 			kind:    "cli",
 			exclude: []Exclusion{{Paths: []string{"internal/server", "Dockerfile"}, When: "true"}},

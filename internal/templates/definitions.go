@@ -35,8 +35,9 @@ type Exclusion struct {
 	Path string `yaml:"path,omitempty"`
 	// Paths lists several globs that share the same condition.
 	Paths []string `yaml:"paths,omitempty"`
-	// When is rendered as a template and must produce "true" or "false".
-	When string `yaml:"when"`
+	// When is rendered as a template and must produce "true" or "false". Without
+	// it the paths are always excluded, as for the template's own files.
+	When string `yaml:"when,omitempty"`
 }
 
 // Patterns returns every glob of the exclusion, whether it was written as
@@ -143,8 +144,8 @@ func (t ProjectTemplate) Validate() error {
 				errs = append(errs, fmt.Errorf("invalid exclude pattern %q: %w", pattern, err))
 			}
 		}
-		if strings.TrimSpace(exclusion.When) == "" {
-			errs = append(errs, fmt.Errorf("exclude %q: when must not be blank", exclusion.label()))
+		if err := checkTemplate(exclusion.When); err != nil {
+			errs = append(errs, fmt.Errorf("exclude %q: when: %w", exclusion.label(), err))
 		}
 	}
 

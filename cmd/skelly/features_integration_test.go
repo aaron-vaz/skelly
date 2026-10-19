@@ -31,7 +31,6 @@ exclude:
   - path: "**/*_test.go"
     when: "{{false}}"
   - path: TEMPLATE.md
-    when: "true"
 `
 
 func variantFiles() map[string]string {
@@ -223,7 +222,7 @@ func TestIntegration_InvalidConfigs(t *testing.T) {
 		{name: "malformed glob in paths", config: "exclude:\n  - paths: [ok, '[unclosed']\n    when: 'true'", wantErr: `invalid exclude pattern "[unclosed"`},
 		{name: "malformed raw glob", config: "raw: ['**/[x']", wantErr: `invalid raw pattern "**/[x"`},
 		{name: "exclude without a path", config: "exclude:\n  - when: 'true'", wantErr: "exclude path must not be blank"},
-		{name: "exclude without a condition", config: "exclude:\n  - path: a", wantErr: `exclude "a": when must not be blank`},
+		{name: "exclude condition that does not parse", config: "exclude:\n  - path: a\n    when: '{{if'", wantErr: `exclude "a": when:`},
 		{name: "condition that is not a boolean", config: "inputs:\n  n: {default: x}\nexclude:\n  - path: a\n    when: '{{.Inputs.n.Value}}'", wantErr: "when must render as true or false"},
 	}
 

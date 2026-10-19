@@ -341,6 +341,10 @@ func (p *Processor) renderPatterns(config ProjectTemplate) (ProjectTemplate, err
 }
 
 func (p *Processor) isExcluded(config ProjectTemplate, exclusion Exclusion) (bool, error) {
+	if strings.TrimSpace(exclusion.When) == "" {
+		return true, nil
+	}
+
 	excluded, err := p.evaluate(config, "exclude "+exclusion.label(), exclusion.When)
 	if err != nil {
 		return false, fmt.Errorf("exclude %q: %w", exclusion.label(), err)

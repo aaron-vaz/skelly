@@ -82,6 +82,22 @@ exclude:
 			wantErr: []string{"exclude path must not be blank", `invalid exclude pattern "[unclosed"`},
 		},
 		{
+			name: "exclude without a condition is allowed, as is a blank one",
+			config: `
+exclude:
+  - path: TEMPLATE.md
+  - paths: [a, b]
+    when: ""`,
+		},
+		{
+			name: "exclude condition that does not parse",
+			config: `
+exclude:
+  - path: a
+    when: '{{if'`,
+			wantErr: []string{`exclude "a": when:`},
+		},
+		{
 			name: "invalid exclude",
 			config: `
 exclude:
@@ -89,7 +105,7 @@ exclude:
   - path: '[unclosed'
     when: "true"
   - path: docs`,
-			wantErr: []string{"exclude path must not be blank", `invalid exclude pattern "[unclosed"`, `exclude "docs": when must not be blank`},
+			wantErr: []string{"exclude path must not be blank", `invalid exclude pattern "[unclosed"`},
 		},
 		{
 			name: "valid rename",
