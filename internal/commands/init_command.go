@@ -27,6 +27,17 @@ const (
 type InitOptions struct {
 	source      string
 	destination string
+	answers     answerFlag
+	noInput     bool
+	yes         bool
+	json        bool
+}
+
+// initResult is what "init -json" prints once the project has been created.
+type initResult struct {
+	Source      string         `json:"source"`
+	Destination string         `json:"destination"`
+	Inputs      map[string]any `json:"inputs"`
 }
 
 // InitCommand encapsulates the logic required to download, process,
@@ -53,6 +64,10 @@ func (c *InitCommand) Description() string {
 func (c *InitCommand) Init(flags *flag.FlagSet) {
 	flags.StringVar(&c.options.source, "src", "", "URL, path or registered alias of the template used to init the new project (required, may also be given as the first argument)")
 	flags.StringVar(&c.options.destination, "dst", defaultDestination, "Destination dir where the project will be initialised to")
+	flags.Var(&c.options.answers, "set", "Answer a template input as name=value, may be repeated; the inputs a template takes are shown by 'skelly inspect'")
+	flags.BoolVar(&c.options.noInput, "no-input", false, "Never prompt: unanswered inputs use their defaults, and it is an error if one has none or the destination is not empty without -yes")
+	flags.BoolVar(&c.options.yes, "yes", false, "Replace the contents of a destination that is not empty without asking")
+	flags.BoolVar(&c.options.json, "json", false, "Print the outcome as JSON instead of text, implies -no-input")
 }
 
 // Run downloads and renders the template in a scratch directory, and only
@@ -96,12 +111,15 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 
 	// Without a config there is nothing to render, so the files are used as-is
 	if config == nil {
-		_ = c.ui.RenderInfo(fmt.Sprintf("No %s file found in template, copying files without rendering", templates.TemplateConfigName))
+		if len(c.options.answers) > 0 {
+			return fmt.Errorf("template has no %s file, so it takes no inputs to -set", templates.TemplateConfigName)
+		}
+		c.info(fmt.Sprintf("No %s file found in template, copying files without rendering", templates.TemplateConfigName))
 		if err := c.processor.RemoveTemplateMetadata(templateDir); err != nil {
 			return fmt.Errorf("failed to process template: %w", err)
 		}
 	} else {
-		if err := c.ui.RenderInputs(ctx, config.Inputs); err != nil {
+		if err := c.collectInputs(ctx, config); err != nil {
 			return fmt.Errorf("failed to collect inputs: %w", err)
 		}
 
@@ -127,7 +145,33 @@ func (c *InitCommand) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to write project to %s: %w", dest, err)
 	}
 
+	if c.options.json {
+		return c.renderResult(source, dest, config)
+	}
 	return c.ui.RenderInfo(fmt.Sprintf("Project created in %s", dest))
+}
+
+// info shows a progress message, unless the output is meant for a program.
+func (c *InitCommand) info(message string) {
+	if !c.options.json {
+		_ = c.ui.RenderInfo(message)
+	}
+}
+
+// renderResult prints what was created as JSON, for the program that ran init.
+func (c *InitCommand) renderResult(source string, dest string, tmpl *templates.ProjectTemplate) error {
+	abs, err := filepath.Abs(dest)
+	if err != nil {
+		abs = dest
+	}
+
+	result := initResult{Source: config.RedactSource(source), Destination: abs, Inputs: map[string]any{}}
+	if tmpl != nil {
+		for name, input := range tmpl.Inputs {
+			result.Inputs[name] = input.Value
+		}
+	}
+	return renderJSON(c.ui, result)
 }
 
 // resolveOptions allows the source to be given positionally, as in
@@ -149,29 +193,45 @@ func (c *InitCommand) resolveOptions(args []string) error {
 		return errors.New("destination path is required")
 	}
 
+	// A program reading the JSON cannot answer prompts either
+	if c.options.json {
+		c.options.noInput = true
+	}
+
 	return nil
 }
 
 // resolveSource swaps a registered alias for its source. Anything else, or
 // an alias-shaped word that is not registered, is returned unchanged.
 func (c *InitCommand) resolveSource(source string) (string, error) {
-	// Only an alias-shaped word can be an alias, so URLs and paths never need the config
-	if !config.IsAlias(source) {
-		return source, nil
-	}
-
-	cfg, err := c.store.Load()
+	resolved, isAlias, err := lookupAlias(c.store, source)
 	if err != nil {
 		return "", err
+	}
+	if isAlias {
+		c.info(fmt.Sprintf("Using template %s from %s", source, config.RedactSource(resolved)))
+	}
+	return resolved, nil
+}
+
+// lookupAlias returns the source registered under alias, or source itself
+// when it is not a registered alias.
+func lookupAlias(store config.Store, source string) (resolved string, isAlias bool, err error) {
+	// Only an alias-shaped word can be an alias, so URLs and paths never need the config
+	if !config.IsAlias(source) {
+		return source, false, nil
+	}
+
+	cfg, err := store.Load()
+	if err != nil {
+		return "", false, err
 	}
 
 	registered, ok := cfg.Sources[source]
 	if !ok {
-		return source, nil
+		return source, false, nil
 	}
-
-	_ = c.ui.RenderInfo(fmt.Sprintf("Using template %s from %s", source, config.RedactSource(registered.URL)))
-	return registered.URL, nil
+	return registered.URL, true, nil
 }
 
 // confirmDestination checks whether dest already has content, and if so asks
@@ -188,6 +248,13 @@ func (c *InitCommand) confirmDestination(ctx context.Context, dest string) (proc
 
 	if err := checkSafeToClear(dest); err != nil {
 		return false, false, err
+	}
+
+	if c.options.yes {
+		return true, true, nil
+	}
+	if c.options.noInput {
+		return false, false, fmt.Errorf("destination %s is not empty, pass -yes to replace its contents", dest)
 	}
 
 	answer, err := c.ui.RenderQuestion(ctx, fmt.Sprintf("Destination %s is not empty. Delete its contents and replace them with the new project?", dest), []string{"y", "n"})

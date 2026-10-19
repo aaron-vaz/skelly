@@ -86,6 +86,7 @@ func NewFlagCommandInvoker(
 
 	cmds := []commands.Command{
 		commands.NewInitCommand(processor, downloader, store, ui),
+		commands.NewInspectCommand(processor, downloader, store, ui),
 		commands.NewSourcesCommand(store, ui),
 		commands.NewHelpCommand(invoker.commands, ui),
 		commands.NewVersionCommand(ui),

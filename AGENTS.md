@@ -10,6 +10,10 @@ Guidelines for agentic coding agents working in this repository.
 - **Binary**: `skelly`
 - **Module**: `github.com/aaron-vaz/skelly`
 
+## Using skelly yourself
+
+Agents should never rely on prompts. `skelly inspect <src>` prints a template's inputs as JSON, and `skelly init <src> -dst <dir> -no-input -set name=value` creates a project without asking anything (add `-yes` to replace a non-empty destination, `-json` for a machine-readable result). See "Using skelly from scripts and AI agents" in the README.
+
 ## Build/Lint/Test Commands
 
 ### All-in-one
@@ -51,11 +55,12 @@ make deps       # Install dependencies and golangci-lint
 cmd/skelly/        # Main entry point
 internal/          # Private packages (not importable externally)
   cli/             # CLI parsing and command invocation
-  commands/        # Command implementations (Group nests subcommands, e.g. "sources add")
+  commands/        # Command implementations (Group nests subcommands, e.g. "sources add"); init, inspect, sources, help, version
   config/          # User config file (registered template sources, settings)
   download/        # Template download functionality
   templates/       # Template processing and rendering
   view/            # User interface (I/O)
+skelly.schema.json # JSON Schema for .skelly.yml (editor support, see below)
 ```
 
 ### Imports
@@ -147,6 +152,14 @@ type Command interface {
 }
 ```
 
+### Template Config (.skelly.yml)
+
+The Go types in `internal/templates/definitions.go` and `Validate` are the source of truth for the config format. `skelly.schema.json` mirrors the structure for editors only, so any change to the config's shape (a new key, a new accepted form) must be made in both, and `internal/templates/schema_test.go` must keep passing: it fails if the schema and `Validate` disagree. Document new keys in the README as well.
+
+Values in the config are templates where it says so in `definitions.go` (input `description`/`default`/`choices`, `env` values, `raw` and `exclude` patterns, `when`, `rename` paths). Inputs are asked in dependency order (`InputLayers`), and `Validate` rejects cycles and unknown references, so keep new templated fields in `inputTemplates` and `Validate`.
+
+`raw` and `exclude` patterns use doublestar globs (`**` crosses directories). Keep new commands scriptable: no prompt without a way to answer it by flag, and anything meant for a program goes to stdout as JSON while errors go to stderr.
+
 ### Filesystem Safety
 
 Templates are untrusted input. Any code that reads or writes inside a template
@@ -181,7 +194,7 @@ When writing tests:
 - Use table-driven tests for multiple cases
 - Run tests with `-race` flag
 - **BDD Syntax**: Structure tests using BDD-style comments (`// Given`, `// When`, `// Then`, `// And`) to clearly delineate setup, execution, and validation phases.
-- **Integration Tests**: Place command-level E2E tests alongside `main` (e.g., `cmd/skelly/main_test.go`), compiling the CLI binary in `TestMain` and executing it as a sub-process via `os/exec.Command` to ensure robust, side-effect-free testing loops.
+- **Integration Tests**: Command-level E2E tests run the compiled binary and live in `cmd/skelly/`. Read `cmd/skelly/AGENTS.md` before adding or changing one; it covers the helpers, fixtures and conventions.
 
 
 ### Context Usage

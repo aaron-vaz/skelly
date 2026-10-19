@@ -152,6 +152,42 @@ func TestStdUI_RenderInputs(t *testing.T) {
 	}
 }
 
+func TestStdUI_RenderInputs_Choices(t *testing.T) {
+	// Given
+	var out, errOut bytes.Buffer
+	ui := NewStdUI(strings.NewReader("web\nservice\n\n"), &out, &errOut)
+	inputs := map[string]templates.Input{
+		"kind": {Description: "Kind of project", Choices: []string{"cli", "service"}},
+		"mode": {Description: "Mode", Default: "dev", Choices: []string{"dev", "prod"}},
+	}
+
+	// When
+	err := ui.RenderInputs(context.Background(), inputs)
+
+	// Then
+	if err != nil {
+		t.Fatalf("RenderInputs failed: %v", err)
+	}
+
+	// And an answer outside the choices is rejected and asked again
+	if !strings.Contains(errOut.String(), "must be one of: cli, service") {
+		t.Errorf("Expected choices error, got %q", errOut.String())
+	}
+	if inputs["kind"].Value != "service" {
+		t.Errorf("Expected kind to be 'service', got %v", inputs["kind"].Value)
+	}
+
+	// And the default stands in for a blank answer
+	if inputs["mode"].Value != "dev" {
+		t.Errorf("Expected mode to be 'dev', got %v", inputs["mode"].Value)
+	}
+
+	// And the prompt lists the choices
+	if !strings.Contains(out.String(), "(one of: cli, service)") {
+		t.Errorf("Expected choices in prompt, got %q", out.String())
+	}
+}
+
 func TestStdUI_RenderInputs_Empty(t *testing.T) {
 	// Given
 	ui := NewStdUI(os.Stdin, os.Stdout, os.Stderr)
