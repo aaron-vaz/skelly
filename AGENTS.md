@@ -192,7 +192,7 @@ When writing tests:
 - Use table-driven tests for multiple cases
 - Run tests with `-race` flag
 - **BDD Syntax**: Structure tests using BDD-style comments (`// Given`, `// When`, `// Then`, `// And`) to clearly delineate setup, execution, and validation phases.
-- **Integration Tests**: Place command-level E2E tests alongside `main` (e.g., `cmd/skelly/main_test.go`), compiling the CLI binary in `TestMain` and executing it as a sub-process via `os/exec.Command` to ensure robust, side-effect-free testing loops.
+- **Integration Tests**: Command-level E2E tests run the compiled binary and live in `cmd/skelly/`. Read `cmd/skelly/AGENTS.md` before adding or changing one; it covers the helpers, fixtures and conventions.
 
 
 ### Context Usage

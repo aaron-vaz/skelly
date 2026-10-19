@@ -106,6 +106,7 @@ func (s *StdUI) renderInput(ctx context.Context, name string, input *templates.I
 		switch {
 		case userInput != "" && !validChoice(input.Choices, userInput):
 			_ = s.RenderError(fmt.Sprintf("This input '%s' must be one of: %s\n", name, strings.Join(input.Choices, ", ")))
+			continue
 		case userInput != "":
 			input.Value = userInput
 			return nil
