@@ -58,6 +58,27 @@ skelly init github.com/user/template -dst ./my-new-app
 
 The template is downloaded and rendered in a temporary directory first, so a failed download or render never touches the destination. If the destination already contains files, `skelly` asks before replacing them.
 
+### Using skelly from scripts and AI agents
+
+`skelly init` asks questions, which a script or an AI coding agent cannot answer. Everything it asks can be given up front instead, and nothing waits on stdin when `-no-input` is set:
+
+```bash
+# 1. Discover what a template needs: inputs (with defaults, choices and whether
+#    they are required), raw patterns and exclusions, as JSON
+skelly inspect github.com/user/template
+
+# 2. Create the project without any prompt
+skelly init github.com/user/template -dst ./my-new-app -no-input \
+  -set ProjectName=my-new-app -set ProjectType=service
+```
+
+*   `-set name=value` answers an input and may be repeated. Unknown inputs and values outside an input's `choices` are rejected, and every problem is reported at once.
+*   `-no-input` never prompts. Inputs you did not `-set` take their defaults, and it is an error if one has none (the error names them), or if the destination is not empty.
+*   `-yes` replaces the contents of a destination that is not empty. It still refuses to wipe a home or root directory.
+*   `-json` prints the outcome as a single JSON object (`source`, `destination` and the `inputs` used) and implies `-no-input`. Errors go to stderr with a non-zero exit code.
+*   `skelly inspect` downloads the template to a scratch directory and prints JSON only. It never renders or writes anything else, so it is safe to run before deciding what to pass to `init`.
+*   Template authors get editor help for `.skelly.yml` from [`skelly.schema.json`](skelly.schema.json).
+
 ### Registering template sources
 
 Templates you use often can be registered under a short alias, so you don't have to type the full source every time:
@@ -141,6 +162,9 @@ Other commands:
 # Show help
 skelly help
 skelly help init
+
+# Show a template's inputs and settings as JSON
+skelly inspect github.com/user/template
 
 # Show version
 skelly version
