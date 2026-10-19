@@ -73,7 +73,7 @@ skelly inspect github.com/user/template
 
 # 2. Create the project without any prompt
 skelly init github.com/user/template -dst ./my-new-app -no-input \
-  -set ProjectName=my-new-app -set ProjectType=service
+  -set project_name=my-new-app -set project_type=service
 ```
 
 *   `-set name=value` answers an input and may be repeated. Unknown inputs and values outside an input's `choices` are rejected, and every problem is reported at once.
