@@ -26,6 +26,10 @@ I found that whenever I started a new projectâ€”whether in Go, Java, or Kotlinâ€
 
 *   **Flexible Sources**: Fetch templates from Git, Mercurial, HTTP, S3, and more.
 *   **Simple Templating**: Uses Go's built-in `text/template` for easy templating, Using a simple YAML configuration file to maintain the inputs for the templating.
+*   **One Template, Many Variants**: `choices` limit what an input accepts, `exclude` drops the files a variant does not need, and `rename` moves files into place, all depending on the user's answers.
+*   **Derived Values**: Input defaults and descriptions, `env` values, patterns and renames can all be templates that use other inputs, so a value is written once.
+*   **Scriptable and AI-Native**: `skelly inspect` describes a template as JSON, and `init` takes `-set`, `-no-input`, `-yes` and `-json`, so scripts and AI agents can scaffold projects without answering prompts.
+*   **Editor Support**: A JSON Schema for `.skelly.yml` gives autocomplete and inline errors.
 *   **Cross-Platform**: A single, self-contained binary for Linux and macOS
 
 ## Installation
@@ -186,7 +190,7 @@ skelly version
 ## Development
 
 ### Prerequisites
-- Go 1.24 or later
+- Go 1.26 or later
 
 ### Building from source
 ```bash
