@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -70,6 +71,11 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, dir string) error {
 		return err
 	}
 
+	// Excluded paths go first, so their contents are never rendered and cannot fail the render
+	if err := p.removeExcluded(root, config); err != nil {
+		return err
+	}
+
 	// Phase 1: Render file contents in place
 	err = fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -118,6 +124,62 @@ func (p *Processor) ApplyTemplate(config ProjectTemplate, dir string) error {
 		return err
 	}
 	return nil
+}
+
+// removeExcluded deletes every path matched by an Exclude entry whose
+// condition renders as true.
+func (p *Processor) removeExcluded(root *os.Root, config ProjectTemplate) error {
+	var patterns []string
+	for _, exclusion := range config.Exclude {
+		excluded, err := p.isExcluded(config, exclusion)
+		if err != nil {
+			return err
+		}
+		if excluded {
+			patterns = append(patterns, exclusion.Path)
+		}
+	}
+	if len(patterns) == 0 {
+		return nil
+	}
+
+	var matched []string
+	err := fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if rel == "." || rel == TemplateConfigName || !matchesAny(patterns, rel) {
+			return nil
+		}
+		matched = append(matched, rel)
+		if d.IsDir() {
+			return fs.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, rel := range matched {
+		if err := root.RemoveAll(rel); err != nil {
+			return fmt.Errorf("error removing excluded path %s: %w", rel, err)
+		}
+	}
+	return nil
+}
+
+func (p *Processor) isExcluded(config ProjectTemplate, exclusion Exclusion) (bool, error) {
+	rendered, err := p.renderer.Render(config, "exclude "+exclusion.Path, exclusion.When)
+	if err != nil {
+		return false, fmt.Errorf("exclude %q: %w", exclusion.Path, err)
+	}
+
+	excluded, err := strconv.ParseBool(strings.TrimSpace(rendered))
+	if err != nil {
+		return false, fmt.Errorf("exclude %q: when must render as true or false, got %q", exclusion.Path, strings.TrimSpace(rendered))
+	}
+	return excluded, nil
 }
 
 func (p *Processor) renderContents(root *os.Root, config ProjectTemplate, rel string) error {

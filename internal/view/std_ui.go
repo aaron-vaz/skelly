@@ -93,7 +93,7 @@ func (s *StdUI) renderInput(ctx context.Context, name string, input *templates.I
 	}
 
 	for {
-		_, err := fmt.Fprintf(s.stdout, "%s: \n%s: [%v]\n", name, input.Description, shownDefault)
+		_, err := fmt.Fprintf(s.stdout, "%s: \n%s: [%v]%s\n", name, input.Description, shownDefault, choicesHint(input.Choices))
 		if err != nil {
 			return fmt.Errorf("failed to write prompt for '%s': %w", name, err)
 		}
@@ -104,6 +104,8 @@ func (s *StdUI) renderInput(ctx context.Context, name string, input *templates.I
 		}
 
 		switch {
+		case userInput != "" && !validChoice(input.Choices, userInput):
+			_ = s.RenderError(fmt.Sprintf("This input '%s' must be one of: %s\n", name, strings.Join(input.Choices, ", ")))
 		case userInput != "":
 			input.Value = userInput
 			return nil
@@ -114,6 +116,18 @@ func (s *StdUI) renderInput(ctx context.Context, name string, input *templates.I
 
 		_ = s.RenderError(fmt.Sprintf("This input '%s' is required. Please provide a value.\n", name))
 	}
+}
+
+func choicesHint(choices []string) string {
+	if len(choices) == 0 {
+		return ""
+	}
+	return " (one of: " + strings.Join(choices, ", ") + ")"
+}
+
+// validChoice reports whether value is allowed; no choices means anything goes.
+func validChoice(choices []string, value string) bool {
+	return len(choices) == 0 || slices.Contains(choices, value)
 }
 
 // waitForUserInput reads stdin on a background goroutine because a blocked

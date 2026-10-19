@@ -12,7 +12,19 @@ import (
 type Input struct {
 	Description string `yaml:"description"`
 	Default     any    `yaml:"default,omitempty"`
-	Value       any    `yaml:"-"`
+	// Choices restricts the accepted values; empty means any value is accepted.
+	Choices []string `yaml:"choices,omitempty"`
+	Value   any      `yaml:"-"`
+}
+
+// Exclusion removes paths from the generated project when its condition holds,
+// e.g. to leave out the server code of a template when the user picked "cli".
+type Exclusion struct {
+	// Path is a glob matched like Raw patterns: against a file's relative path,
+	// its name, or any parent directory.
+	Path string `yaml:"path"`
+	// When is rendered as a template and must produce "true" or "false".
+	When string `yaml:"when"`
 }
 
 // ProjectTemplate delineates the configuration manifest defining how a template generates.
@@ -26,6 +38,10 @@ type ProjectTemplate struct {
 	// being rendered, e.g. CI workflows or Helm charts that use {{ }} themselves.
 	// A pattern may match a file's relative path, its name, or any parent directory.
 	Raw []string `yaml:"raw,omitempty"`
+	// Exclude lists paths that are dropped from the generated project, before
+	// rendering, whenever their condition renders as true. Unlike Raw it also
+	// applies to raw files.
+	Exclude []Exclusion `yaml:"exclude,omitempty"`
 }
 
 // Validate reports every problem in the config at once, so a template author
@@ -47,6 +63,9 @@ func (t ProjectTemplate) Validate() error {
 		if !isScalar(t.Inputs[name].Default) {
 			errs = append(errs, fmt.Errorf("input %q: default must be a string, number or boolean, got %T", name, t.Inputs[name].Default))
 		}
+		if err := validateChoices(name, t.Inputs[name]); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	for _, pattern := range t.Raw {
@@ -55,7 +74,29 @@ func (t ProjectTemplate) Validate() error {
 		}
 	}
 
+	for _, exclusion := range t.Exclude {
+		if exclusion.Path == "" {
+			errs = append(errs, errors.New("exclude path must not be blank"))
+		} else if _, err := path.Match(exclusion.Path, ""); err != nil {
+			errs = append(errs, fmt.Errorf("invalid exclude pattern %q: %w", exclusion.Path, err))
+		}
+		if strings.TrimSpace(exclusion.When) == "" {
+			errs = append(errs, fmt.Errorf("exclude %q: when must not be blank", exclusion.Path))
+		}
+	}
+
 	return errors.Join(errs...)
+}
+
+// validateChoices rejects a default that the user could not have typed in.
+func validateChoices(name string, input Input) error {
+	if len(input.Choices) == 0 || input.Default == nil || input.Default == "" {
+		return nil
+	}
+	if !slices.Contains(input.Choices, fmt.Sprint(input.Default)) {
+		return fmt.Errorf("input %q: default %v is not one of its choices (%s)", name, input.Default, strings.Join(input.Choices, ", "))
+	}
+	return nil
 }
 
 // isScalar reports whether v can be typed in at a prompt; defaults stand in for

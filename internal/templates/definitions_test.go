@@ -43,6 +43,37 @@ inputs:
 			wantErr: []string{`input "dict": default must be`, `input "list": default must be`},
 		},
 		{
+			name: "default within choices",
+			config: `
+inputs:
+  kind: {default: cli, choices: [cli, service]}
+  other: {choices: [a, b]}`,
+		},
+		{
+			name: "default outside choices",
+			config: `
+inputs:
+  kind: {default: web, choices: [cli, service]}`,
+			wantErr: []string{`input "kind": default web is not one of its choices (cli, service)`},
+		},
+		{
+			name: "valid exclude",
+			config: `
+exclude:
+  - path: internal/server
+    when: '{{eq .Inputs.kind.Value "cli"}}'`,
+		},
+		{
+			name: "invalid exclude",
+			config: `
+exclude:
+  - when: "true"
+  - path: '[unclosed'
+    when: "true"
+  - path: docs`,
+			wantErr: []string{"exclude path must not be blank", `invalid exclude pattern "[unclosed"`, `exclude "docs": when must not be blank`},
+		},
+		{
 			name:    "invalid raw pattern",
 			config:  `raw: ['[unclosed']`,
 			wantErr: []string{`invalid raw pattern "[unclosed"`},

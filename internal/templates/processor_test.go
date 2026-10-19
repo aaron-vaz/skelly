@@ -283,6 +283,115 @@ func TestProcessor_ApplyTemplate_Scenarios(t *testing.T) {
 	}
 }
 
+func TestProcessor_ApplyTemplate_Exclude(t *testing.T) {
+	tests := []struct {
+		name    string
+		kind    string
+		exclude []Exclusion
+		files   map[string]string
+		want    []string
+		absent  []string
+		wantErr string
+	}{
+		{
+			name:    "directory is removed when the condition is true",
+			kind:    "cli",
+			exclude: []Exclusion{{Path: "internal/server", When: `{{eq .Inputs.kind.Value "cli"}}`}},
+			files:   map[string]string{"internal/server/server.go": "package server", "internal/app/app.go": "package app"},
+			want:    []string{"internal/app/app.go"},
+			absent:  []string{"internal/server"},
+		},
+		{
+			name:    "path is kept when the condition is false",
+			kind:    "service",
+			exclude: []Exclusion{{Path: "internal/server", When: `{{eq .Inputs.kind.Value "cli"}}`}},
+			files:   map[string]string{"internal/server/server.go": "package server"},
+			want:    []string{"internal/server/server.go"},
+		},
+		{
+			name:    "raw files can be excluded and are never rendered",
+			kind:    "cli",
+			exclude: []Exclusion{{Path: ".github/workflows/docker.yml", When: "true"}},
+			files:   map[string]string{".github/workflows/docker.yml": "${{ secrets.TOKEN }}", ".github/workflows/ci.yml": "${{ github.sha }}"},
+			want:    []string{".github/workflows/ci.yml"},
+			absent:  []string{".github/workflows/docker.yml"},
+		},
+		{
+			name:    "excluded files with unrenderable content do not fail the render",
+			kind:    "cli",
+			exclude: []Exclusion{{Path: "*.tmpl", When: "true"}},
+			files:   map[string]string{"a.tmpl": "{{.Missing.Key}}", "b.txt": "ok"},
+			want:    []string{"b.txt"},
+			absent:  []string{"a.tmpl"},
+		},
+		{
+			name:    "condition may have surrounding whitespace",
+			kind:    "cli",
+			exclude: []Exclusion{{Path: "gone.txt", When: "\n  true\n"}},
+			files:   map[string]string{"gone.txt": "x"},
+			absent:  []string{"gone.txt"},
+		},
+		{
+			name:    "condition must render as a boolean",
+			kind:    "cli",
+			exclude: []Exclusion{{Path: "a.txt", When: "{{.Inputs.kind.Value}}"}},
+			files:   map[string]string{"a.txt": "x"},
+			wantErr: `exclude "a.txt": when must render as true or false, got "cli"`,
+		},
+		{
+			name:    "condition referencing an unknown input is an error",
+			kind:    "cli",
+			exclude: []Exclusion{{Path: "a.txt", When: "{{.Inputs.nope.Value}}"}},
+			files:   map[string]string{"a.txt": "x"},
+			wantErr: `exclude "a.txt"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given
+			cfg := ProjectTemplate{
+				Inputs:  map[string]Input{"kind": {Value: tt.kind}},
+				Exclude: tt.exclude,
+			}
+			dest := t.TempDir()
+			_ = os.WriteFile(filepath.Join(dest, TemplateConfigName), []byte(""), 0644)
+			for rel, content := range tt.files {
+				full := filepath.Join(dest, filepath.FromSlash(rel))
+				_ = os.MkdirAll(filepath.Dir(full), 0755)
+				_ = os.WriteFile(full, []byte(content), 0644)
+			}
+			cfg.Raw = []string{".github"}
+
+			// When
+			err := NewTemplateProcessor(NewRendererService()).ApplyTemplate(cfg, dest)
+
+			// Then
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("ApplyTemplate() error = %v, want error containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ApplyTemplate() error = %v", err)
+			}
+
+			// And
+			for _, rel := range tt.want {
+				if _, err := os.Lstat(filepath.Join(dest, filepath.FromSlash(rel))); err != nil {
+					t.Errorf("Expected %s to exist: %v", rel, err)
+				}
+			}
+			for _, rel := range tt.absent {
+				if _, err := os.Lstat(filepath.Join(dest, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+					t.Errorf("Expected %s to be gone", rel)
+				}
+			}
+		})
+	}
+}
+
 func TestMatchesAny(t *testing.T) {
 	tests := []struct {
 		pattern string
