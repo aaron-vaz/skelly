@@ -1086,3 +1086,69 @@ func TestIntegration_NumbersMustBeFinite(t *testing.T) {
 		})
 	}
 }
+
+func TestIntegration_TemplateFunctions(t *testing.T) {
+	// Given a template that derives a Java/Kotlin style package and its directory path from two inputs
+	srcDir := writeTemplate(t, map[string]string{
+		".skelly.yml": `
+inputs:
+  owner: {default: Me-Too}
+  project_name: {description: Project name}
+  package:
+    description: Package of {{.Inputs.project_name.Value}}
+    default: 'io.github.{{.Inputs.owner.Value | lower | replace "-" ""}}.{{replace "-" "" .Inputs.project_name.Value}}'
+env:
+  package_path: '{{replace "." "/" .Inputs.package.Value}}'
+`,
+		"src/main/kotlin/{{.Env.package_path}}/App.kt": "package {{.Inputs.package.Value}}",
+	})
+
+	t.Run("the default package and the directories for it are derived", func(t *testing.T) {
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input", "-set", "project_name=my-app")
+
+		// Then
+		if res.err != nil {
+			t.Fatalf("init failed: %v\n%s%s", res.err, res.stdout, res.stderr)
+		}
+		assertContent(t, filepath.Join(destDir, "src", "main", "kotlin", "io", "github", "metoo", "myapp", "App.kt"), "package io.github.metoo.myapp")
+	})
+
+	t.Run("an answer for the package gives other directories", func(t *testing.T) {
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input", "-set", "project_name=my-app", "-set", "package=com.example.shop")
+
+		// Then
+		if res.err != nil {
+			t.Fatalf("init failed: %v\n%s%s", res.err, res.stdout, res.stderr)
+		}
+		assertContent(t, filepath.Join(destDir, "src", "main", "kotlin", "com", "example", "shop", "App.kt"), "package com.example.shop")
+	})
+
+	t.Run("a package that would leave the project is refused", func(t *testing.T) {
+		destDir := filepath.Join(t.TempDir(), "dest")
+
+		// When
+		res := runSkelly(t, "", nil, "init", srcDir, "-dst", destDir, "-no-input", "-set", "project_name=x", "-set", "package=../../etc")
+
+		// Then
+		if res.err == nil {
+			t.Errorf("Expected a refusal, got success: %s", res.stdout)
+		}
+		assertAbsent(t, destDir)
+	})
+
+	t.Run("inspect shows the default as written and what it depends on", func(t *testing.T) {
+		// When
+		res := runSkelly(t, "", nil, "inspect", srcDir)
+
+		// Then
+		if res.err != nil || !strings.Contains(res.stdout, `"dependsOn"`) || !strings.Contains(res.stdout, `replace \"-\" \"\"`) {
+			t.Errorf("inspect = %v\n%s%s", res.err, res.stdout, res.stderr)
+		}
+	})
+}

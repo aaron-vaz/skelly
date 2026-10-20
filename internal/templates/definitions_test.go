@@ -287,6 +287,29 @@ inputs:
 			wantErr: []string{"inputs use each other in a cycle, involving: a, b, c"},
 		},
 		{
+			name: "functions can be used anywhere a template can, and their inputs are ordered",
+			config: `
+inputs:
+  owner: {default: Me-Too}
+  name: {default: my-app}
+  package: {default: 'io.github.{{.Inputs.owner.Value | lower | replace "-" ""}}.{{replace "-" "" .Inputs.name.Value}}'}
+env:
+  path: '{{replace "." "/" .Inputs.package.Value}}'
+rename:
+  - from: src
+    to: '{{trimPrefix "io." (replace "." "/" .Inputs.package.Value)}}'
+    when: '{{ne (lower .Inputs.owner.Value) ""}}'`,
+		},
+		{
+			name: "an unknown function is reported when the template is loaded",
+			config: `
+inputs:
+  a: {default: '{{shell "ls"}}'}
+env:
+  x: '{{nope .Inputs.a.Value}}'`,
+			wantErr: []string{`input "a": default:`, `function "shell" not defined`, `env "x":`},
+		},
+		{
 			name: "references through a variable are found, so the order is right",
 			config: `
 inputs:
@@ -465,5 +488,29 @@ func TestIsSkippedName(t *testing.T) {
 				t.Errorf("isSkippedName(%q) = %v, want %v", tt.name, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestProjectTemplate_InputLayers_ThroughFunctions(t *testing.T) {
+	// Given a package derived from two inputs with functions and a pipeline
+	var config ProjectTemplate
+	err := yaml.Unmarshal([]byte(`
+inputs:
+  owner: {default: me}
+  name: {description: Name}
+  package: {default: 'io.{{.Inputs.owner.Value | lower}}.{{replace "-" "" .Inputs.name.Value}}'}`), &config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// When
+	layers, err := config.InputLayers()
+
+	// Then
+	if err != nil || len(layers) != 2 || strings.Join(layers[1], ",") != "package" {
+		t.Errorf("layers = %v, %v, want package after the inputs it uses", layers, err)
+	}
+	if got := strings.Join(config.InputDependencies()["package"], ","); got != "name,owner" {
+		t.Errorf("package depends on %q, want name,owner", got)
 	}
 }
