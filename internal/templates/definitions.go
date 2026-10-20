@@ -322,7 +322,7 @@ func inputRefs(text string) ([]string, error) {
 		return nil, nil
 	}
 
-	parsed, err := template.New("").Option("missingkey=error").Parse(text)
+	parsed, err := template.New("").Funcs(templateFuncs).Option("missingkey=error").Parse(text)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +479,7 @@ func isTemplated(text string) bool {
 // template is loaded and not halfway through rendering. What a template renders
 // to depends on the answers, so that can only be checked when it is rendered.
 func checkTemplate(text string) error {
-	_, err := template.New("").Option("missingkey=error").Parse(text)
+	_, err := template.New("").Funcs(templateFuncs).Option("missingkey=error").Parse(text)
 	return err
 }
 

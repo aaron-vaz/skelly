@@ -158,6 +158,8 @@ The Go types in `internal/templates/definitions.go` and `Validate` are the sourc
 
 Values in the config are templates where it says so in `definitions.go` (input `description`/`default`/`choices`, `env` values, `raw` and `exclude` patterns, `when`, `rename` paths). Inputs are asked in dependency order (`InputLayers`), and `Validate` rejects cycles and unknown references, so keep new templated fields in `inputTemplates` and `Validate`.
 
+Template functions live in `templateFuncs` (`internal/templates/render_std.go`). Every place that parses a template must register them with `.Funcs(templateFuncs)`, or a call is reported as undefined when the config is loaded. Keep them pure string functions: templates are untrusted, so nothing that reads files, the environment or runs commands.
+
 `raw` and `exclude` patterns use doublestar globs (`**` crosses directories). Keep new commands scriptable: no prompt without a way to answer it by flag, and anything meant for a program goes to stdout as JSON while errors go to stderr.
 
 ### Filesystem Safety
