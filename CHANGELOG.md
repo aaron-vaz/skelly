@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/aaron-vaz/skelly/compare/v0.4.0...v0.5.0) (2026-10-20)
+
+
+### Features
+
+* add string functions for templates ([#24](https://github.com/aaron-vaz/skelly/issues/24)) ([a267a2b](https://github.com/aaron-vaz/skelly/commit/a267a2bd42425b7259c0c9fee2cee9742d94649d))
+* exclude, choices, rename, templated config, JSON Schema and scriptable init ([#22](https://github.com/aaron-vaz/skelly/issues/22)) ([a409dae](https://github.com/aaron-vaz/skelly/commit/a409dae06327137cba27d076c7946239efb08cc7))
+
 ## [0.4.0](https://github.com/aaron-vaz/skelly/compare/v0.3.1...v0.4.0) (2026-10-17)
 
 
