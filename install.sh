@@ -15,6 +15,7 @@ REPO="aaron-vaz/skelly"
 DEFAULT_BASE_URL="https://github.com/${REPO}/releases"
 
 tmpdir=""
+staged=""
 
 say() {
     printf '%s\n' "$*"
@@ -26,6 +27,9 @@ die() {
 }
 
 cleanup() {
+    if [ -n "$staged" ]; then
+        rm -f "$staged"
+    fi
     if [ -n "$tmpdir" ]; then
         rm -rf "$tmpdir"
     fi
@@ -52,6 +56,10 @@ need() {
 
 # A release tag, and nothing that could be read as a path or as shell syntax.
 valid_version() {
+    # grep reads line by line, so characters that could add a line or a path are ruled out first
+    case "$1" in
+        *[!A-Za-z0-9.+-]*) return 1 ;;
+    esac
     printf '%s' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'
 }
 
@@ -71,25 +79,41 @@ detect_arch() {
     esac
 }
 
-# Only https, so the download cannot be read or changed on the way, except from this machine.
+# Only https, so the download cannot be read or changed on the way. The exception is this machine
+# (localhost or 127.0.0.1, with an optional port), which the tests use. A URL with credentials is
+# refused because curl would read http://localhost:80@example.com as a login on example.com.
 curl_proto() {
     case "$1" in
+        *@*) die "SKELLY_BASE_URL must not contain credentials, got $1" ;;
         https://*) echo "=https" ;;
-        http://localhost | http://localhost[:/]* | http://127.0.0.1 | http://127.0.0.1[:/]*) echo "=http,https" ;;
+        http://*)
+            authority="${1#http://}"
+            authority="${authority%%/*}"
+            case "$authority" in
+                localhost | 127.0.0.1) echo "=http,https" ;;
+                localhost:* | 127.0.0.1:*)
+                    case "${authority#*:}" in
+                        "" | *[!0-9]*) die "SKELLY_BASE_URL must be an https URL, got $1" ;;
+                    esac
+                    echo "=http,https"
+                    ;;
+                *) die "SKELLY_BASE_URL must be an https URL, got $1" ;;
+            esac
+            ;;
         *) die "SKELLY_BASE_URL must be an https URL, got $1" ;;
     esac
 }
 
 fetch() {
     # $1 URL, $2 output file
-    curl --proto "$proto" --tlsv1.2 --fail --silent --show-error --location --retry 2 \
-        --output "$2" "$1" || die "could not download $1"
+    curl --proto "$proto" --proto-redir "$proto" --max-redirs 5 --tlsv1.2 --fail --silent --show-error \
+        --location --retry 2 --output "$2" "$1" || die "could not download $1"
 }
 
 latest_version() {
     # The latest release redirects to its tag page, which names the tag without using the API
-    final=$(curl --proto "$proto" --tlsv1.2 --fail --silent --show-error --location --head \
-        --output /dev/null --write-out '%{url_effective}' "$base_url/latest") ||
+    final=$(curl --proto "$proto" --proto-redir "$proto" --max-redirs 5 --tlsv1.2 --fail --silent \
+        --show-error --location --head --output /dev/null --write-out '%{url_effective}' "$base_url/latest") ||
         die "could not find the latest release at $base_url/latest"
     echo "${final##*/}"
 }
@@ -121,25 +145,44 @@ verify_checksum() {
     fi
 }
 
+# Whether other users can rename files in the directory, which is what a shared directory without
+# the sticky bit (like /tmp has) allows.
+shared_directory() {
+    # ls is the one portable way to read permissions: the flags of stat differ between GNU and BSD
+    # shellcheck disable=SC2012
+    perms=$(ls -ldL "$1" | cut -c 1-10)
+    other_write=$(printf '%s' "$perms" | cut -c 9)
+    other_exec=$(printf '%s' "$perms" | cut -c 10)
+    [ "$other_write" = w ] && [ "$other_exec" != t ] && [ "$other_exec" != T ]
+}
+
 verify_provenance() {
-    # $1 path of the downloaded binary
+    # $1 path of the downloaded binary, $2 the release tag. The attestation has to come from this
+    # repository's release workflow, run for that tag: --repo alone would accept an attestation
+    # from any workflow of the repository.
     command -v gh >/dev/null 2>&1 || die "--verify-provenance needs the GitHub CLI (gh), which was not found"
-    gh attestation verify "$1" --repo "$REPO" >/dev/null ||
-        die "the build attestation of the download could not be verified, so nothing was installed"
+    gh attestation verify "$1" --repo "$REPO" \
+        --signer-workflow "$REPO/.github/workflows/release.yml" \
+        --source-ref "refs/tags/$2" \
+        --deny-self-hosted-runners >/dev/null ||
+        die "the build attestation of the download could not be verified, so nothing was installed (releases before v0.6.0 have none)"
     say "Build attestation verified."
 }
 
 install_binary() {
     # $1 downloaded file, $2 destination directory
     mkdir -p "$2" || die "could not create $2: pick another directory with -b, or run with the rights to write to it"
-    staged="$2/.skelly.$$"
+    [ ! -d "$2/skelly" ] || die "$2/skelly is a directory: remove it, or pick another directory with -b"
+    if shared_directory "$2"; then
+        die "$2 can be changed by other users and is not sticky: pick a directory of your own with -b"
+    fi
+    # mktemp makes a file with a name that cannot be guessed, so nobody can plant a link at it
+    staged=$(mktemp "$2/.skelly.XXXXXX") || die "could not write to $2: pick another directory with -b, or run with the rights to write to it"
     cp "$1" "$staged" || die "could not write to $2: pick another directory with -b, or run with the rights to write to it"
-    chmod 0755 "$staged"
+    chmod 0755 "$staged" || die "could not make $staged executable"
     # A move within the directory, so an interrupted install never leaves half a binary at the final name
-    mv -f "$staged" "$2/skelly" || {
-        rm -f "$staged"
-        die "could not replace $2/skelly"
-    }
+    mv -f "$staged" "$2/skelly" || die "could not replace $2/skelly"
+    staged=""
 }
 
 main() {
@@ -175,6 +218,9 @@ main() {
         [ -n "${HOME:-}" ] || die "HOME is not set: choose where to install with -b"
         bin_dir="$HOME/.local/bin"
     fi
+    while [ "${bin_dir%/}" != "$bin_dir" ] && [ "${bin_dir%/}" != "" ]; do
+        bin_dir="${bin_dir%/}"
+    done
 
     if [ -n "$version" ]; then
         case "$version" in
@@ -211,7 +257,7 @@ main() {
     verify_checksum "$asset" "$tmpdir"
     say "Checksum verified."
     if [ "$provenance" -eq 1 ]; then
-        verify_provenance "$tmpdir/$asset"
+        verify_provenance "$tmpdir/$asset" "$version"
     fi
 
     install_binary "$tmpdir/$asset" "$bin_dir"

@@ -1,10 +1,11 @@
 name: Backfill checksums
 
 # Releases made before the release workflow wrote checksums.txt get one, so install.sh can
-# verify them too. The hashes are computed from the binaries as they are published now, and
-# checked against the digests GitHub recorded when each file was uploaded. They show that a
-# binary has not changed since, but unlike the checksums of a new release they were not made
-# by the build that produced the binary, and there is no build attestation for them.
+# verify them too. The hashes are computed from the binaries as they are published now. Where
+# GitHub reports a digest for a file they are checked against it, which catches a corrupt download
+# but not a file that was replaced after the release (GitHub reports the digest of the file as it
+# is now). So the result shows that a binary does not change from now on; it was not made by the
+# build that produced the binary, and there is no build attestation for it.
 #
 # Run it by hand from the Actions tab. It never replaces a checksums.txt that exists.
 
@@ -63,10 +64,13 @@ jobs:
 
             while IFS=$'\t' read -r name digest; do
               case "$name" in skelly_*) ;; *) continue ;; esac
-              [ -n "$digest" ] || continue
+              if [ -z "$digest" ]; then
+                echo "::warning::GitHub reports no digest for $tag $name, so its hash was not cross-checked"
+                continue
+              fi
               got=$(grep "  $name\$" "$dir/checksums.txt" | cut -d ' ' -f 1)
               if [ "${digest#sha256:}" != "$got" ]; then
-                echo "::error::$tag $name is $got, but GitHub recorded ${digest#sha256:} when it was uploaded"
+                echo "::error::$tag $name is $got, but GitHub reports ${digest#sha256:}"
                 exit 1
               fi
             done <<< "$assets"

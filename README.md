@@ -64,21 +64,16 @@ shasum -a 256 -c --ignore-missing checksums.txt
 
 #### Verifying a release
 
-Every release has a `checksums.txt` with the SHA-256 of each binary. Releases built from v0.6.0 on are also **attested**: GitHub records that the binaries and the checksums were built by this repository's release workflow, which you can check with the GitHub CLI:
+Every release has a `checksums.txt` with the SHA-256 of each binary. Releases built from v0.6.0 on are also **attested**: GitHub records that the binaries and the checksums were built by this repository's release workflow, which you can check with the GitHub CLI (`install.sh --verify-provenance` runs the same check, for the tag it installs):
 
 ```bash
-gh attestation verify skelly_linux_amd64 --repo aaron-vaz/skelly
+gh attestation verify skelly_linux_amd64 --repo aaron-vaz/skelly \
+  --signer-workflow aaron-vaz/skelly/.github/workflows/release.yml
 ```
 
-The `checksums.txt` of earlier releases was added afterwards. It was computed from the published binaries and agrees with the digests GitHub recorded when they were uploaded, so it shows that a binary has not changed since, but it was not made by the build and there is no attestation for those releases.
+`checksums.txt` is served from the same place as the binaries, so on its own it protects against corruption and against one file being changed, not against someone who can replace the whole release. The attestation is what ties a binary to this repository's release workflow.
 
-### From Source
-
-Ensure you have Go (1.26 or later) installed on your system.
-
-```bash
-go install github.com/aaron-vaz/skelly/cmd/skelly@latest
-```
+The `checksums.txt` of earlier releases was added afterwards, from the binaries as they are published now (and, where GitHub reports a digest for a file, it agrees with it). It shows that a binary does not change from then on, but it was not made by the build and there is no attestation for those releases.
 
 ## Usage
 

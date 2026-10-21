@@ -302,8 +302,8 @@ func TestIntegration_Install_RefusesWhatItCannotVerify(t *testing.T) {
 }
 
 func TestIntegration_Install_RejectsBadVersions(t *testing.T) {
-	for _, version := range []string{"v1;touch pwned", "../../etc", "v1.2", "latest", "v1.2.3/../x", "$(id)"} {
-		t.Run(version, func(t *testing.T) {
+	for _, version := range []string{"v1;touch pwned", "../../etc", "v1.2", "latest", "v1.2.3/../x", "$(id)", "v1.2.3\nx"} {
+		t.Run(strings.ReplaceAll(version, "\n", "_newline_"), func(t *testing.T) {
 			// Given a server that must not be reached
 			rel, _ := goodRelease(t, "v1.2.3", "v1.2.3")
 			binDir := filepath.Join(t.TempDir(), "bin")
@@ -324,7 +324,16 @@ func TestIntegration_Install_RejectsBadVersions(t *testing.T) {
 }
 
 func TestIntegration_Install_OnlyHTTPS(t *testing.T) {
-	for _, base := range []string{"http://example.com/releases", "ftp://example.com", "http://localhost.evil.example"} {
+	for _, base := range []string{
+		"http://example.com/releases",
+		"ftp://example.com",
+		"http://localhost.evil.example",
+		// curl reads these as a login on the host after the @
+		"http://localhost:80@evil.example/",
+		"http://127.0.0.1:x@evil.example",
+		"https://user:secret@example.com",
+		"http://localhost:80x",
+	} {
 		t.Run(base, func(t *testing.T) {
 			// Given a base URL that is not https and not this machine
 			binDir := filepath.Join(t.TempDir(), "bin")
@@ -333,7 +342,8 @@ func TestIntegration_Install_OnlyHTTPS(t *testing.T) {
 			result := runInstall(t, installOptions{baseURL: base}, "-b", binDir)
 
 			// Then it is refused
-			if result.err == nil || !strings.Contains(result.stderr, "must be an https URL") {
+			refused := strings.Contains(result.stderr, "must be an https URL") || strings.Contains(result.stderr, "must not contain credentials")
+			if result.err == nil || !refused {
 				t.Errorf("err = %v, stderr = %q", result.err, result.stderr)
 			}
 			assertAbsent(t, binDir, "skelly")
@@ -433,7 +443,12 @@ func TestIntegration_Install_Provenance(t *testing.T) {
 		if err != nil {
 			t.Fatalf("gh was not called: %v", err)
 		}
-		for _, want := range []string{"attestation verify", asset, "--repo aaron-vaz/skelly"} {
+		// And it has to be the release workflow of this repository, run for this tag
+		for _, want := range []string{
+			"attestation verify", asset, "--repo aaron-vaz/skelly",
+			"--signer-workflow aaron-vaz/skelly/.github/workflows/release.yml",
+			"--source-ref refs/tags/v1.2.3",
+		} {
 			if !strings.Contains(string(recorded), want) {
 				t.Errorf("gh was called with %q, want it to contain %q", recorded, want)
 			}
@@ -466,5 +481,118 @@ func TestIntegration_Install_Help(t *testing.T) {
 	// Then
 	if result.err != nil || !strings.Contains(result.stdout, "--verify-provenance") {
 		t.Errorf("err = %v, stdout = %q", result.err, result.stdout)
+	}
+}
+
+func TestIntegration_Install_SharedDirectory(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    os.FileMode
+		refused bool
+	}{
+		{"writable by everyone is refused", 0o777, true},
+		{"writable by everyone but sticky, like /tmp, is fine", 0o777 | os.ModeSticky, false},
+		{"private is fine", 0o700, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given a destination with those permissions
+			rel, _ := goodRelease(t, "v1.2.3", "v1.2.3")
+			binDir := t.TempDir()
+			if err := os.Chmod(binDir, tt.mode); err != nil {
+				t.Fatal(err)
+			}
+
+			// When install.sh is run
+			result := runInstall(t, installOptions{baseURL: rel.server.URL}, "-b", binDir)
+
+			// Then other users being able to rename files in it stops the install
+			if tt.refused {
+				if result.err == nil || !strings.Contains(result.stderr, "other users") {
+					t.Errorf("err = %v, stderr = %q", result.err, result.stderr)
+				}
+				assertAbsent(t, binDir, "skelly")
+				return
+			}
+			if result.err != nil {
+				t.Fatalf("err = %v, stderr: %s", result.err, result.stderr)
+			}
+			assertExists(t, binDir, "skelly")
+		})
+	}
+}
+
+func TestIntegration_Install_DestinationIsADirectory(t *testing.T) {
+	// Given a directory where the binary should go, which mv would move the new binary into
+	rel, _ := goodRelease(t, "v1.2.3", "v1.2.3")
+	binDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(binDir, "skelly"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// When install.sh is run
+	result := runInstall(t, installOptions{baseURL: rel.server.URL}, "-b", binDir)
+
+	// Then it refuses and nothing is put inside it
+	if result.err == nil || !strings.Contains(result.stderr, "is a directory") {
+		t.Errorf("err = %v, stderr = %q", result.err, result.stderr)
+	}
+	entries, _ := os.ReadDir(filepath.Join(binDir, "skelly"))
+	if len(entries) != 0 {
+		t.Errorf("expected nothing inside the directory, got %v", entries)
+	}
+}
+
+func TestIntegration_Install_TrailingSlashAndPATH(t *testing.T) {
+	// Given a directory that is in the PATH, given with a trailing slash
+	rel, _ := goodRelease(t, "v1.2.3", "v1.2.3")
+	binDir := t.TempDir()
+
+	// When install.sh is run
+	result := runInstall(t, installOptions{
+		baseURL: rel.server.URL,
+		env:     []string{"PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH")},
+	}, "-b", binDir+"/")
+
+	// Then it does not claim the directory is missing from the PATH
+	if result.err != nil {
+		t.Fatalf("err = %v, stderr: %s", result.err, result.stderr)
+	}
+	if strings.Contains(result.stdout, "not in your PATH") {
+		t.Errorf("unexpected PATH note: %s", result.stdout)
+	}
+}
+
+func TestIntegration_Install_StagesWithAnUnpredictableName(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/mktemp"); err != nil {
+		t.Skip("needs /usr/bin/mktemp to wrap it")
+	}
+
+	// Given a mktemp that records how it is called
+	rel, _ := goodRelease(t, "v1.2.3", "v1.2.3")
+	binDir := t.TempDir()
+	calls := filepath.Join(t.TempDir(), "mktemp-calls")
+	mktemp := fmt.Sprintf("echo \"$*\" >> %q\nexec /usr/bin/mktemp \"$@\"\n", calls)
+
+	// When install.sh is run
+	result := runInstall(t, installOptions{baseURL: rel.server.URL, stubs: map[string]string{"mktemp": mktemp}}, "-b", binDir)
+
+	// Then the staged file is made in the destination by mktemp, so its name cannot be guessed
+	// and a link planted in a shared directory is not written through
+	if result.err != nil {
+		t.Fatalf("err = %v, stderr: %s", result.err, result.stderr)
+	}
+	recorded, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(binDir, ".skelly.XXXXXX"); !strings.Contains(string(recorded), want) {
+		t.Errorf("mktemp was called with %q, want a call for %q", recorded, want)
+	}
+
+	// And no staging file is left behind
+	entries, err := os.ReadDir(binDir)
+	if err != nil || len(entries) != 1 {
+		t.Errorf("expected only skelly in %s, got %v (%v)", binDir, entries, err)
 	}
 }
