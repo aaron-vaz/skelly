@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # For the build attestation, which proves the binaries were built by this workflow
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v3
 
@@ -21,6 +24,13 @@ jobs:
       - name: Build release artifacts
         run: make release
 
+      - name: Attest the build
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            build/bin/skelly_*
+            build/bin/checksums.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -29,3 +39,4 @@ jobs:
             build/bin/skelly_linux_arm64
             build/bin/skelly_darwin_amd64
             build/bin/skelly_darwin_arm64
+            build/bin/checksums.txt

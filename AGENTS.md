@@ -61,6 +61,7 @@ internal/          # Private packages (not importable externally)
   templates/       # Template processing and rendering
   view/            # User interface (I/O)
 skelly.schema.json # JSON Schema for .skelly.yml (editor support, see below)
+install.sh         # POSIX sh installer that verifies a release download (see below)
 ```
 
 ### Imports
@@ -168,6 +169,14 @@ Templates are untrusted input. Any code that reads or writes inside a template
 directory must go through an `os.Root` (see `internal/templates/processor.go`)
 so symlinks and rendered names cannot escape it, and `init` must only touch the
 destination after download and rendering have fully succeeded.
+
+### Releases and install.sh
+
+`make release` builds the four binaries and writes `build/bin/checksums.txt` (`shasum -a 256`, the format `sha256sum -c` reads). The release workflow attests the binaries and `checksums.txt` and uploads them all, and `install.sh` downloads a binary plus `checksums.txt` and refuses to install unless the hash matches. So keep the binary names `skelly_<os>_<arch>`: they are what the installer looks for.
+
+`install.sh` is plain POSIX `sh`, and everything in it is inside `main`, which runs last, so a truncated download runs nothing. Keep it `shellcheck --shell=sh` clean (CI checks), validate anything that reaches a URL or a path, and fail closed: a missing or mismatched checksum is an error, never a warning. Its tests are in `cmd/skelly/install_integration_test.go`.
+
+`.github/workflows/backfill-checksums.yml` is a manual workflow that adds a `checksums.txt` to releases made before checksums existed.
 
 ### File Organization
 

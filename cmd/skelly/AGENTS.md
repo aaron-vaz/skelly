@@ -18,6 +18,7 @@ Use `-count=1`: the tests depend on the binary and the filesystem, so cached res
 | File | Covers |
 |---|---|
 | `main_test.go` | help, version, `init` basics (prompts, default destination, closed stdin, Ctrl+C, nested names, raw files), `sources` |
+| `install_integration_test.go` | `install.sh` against a fake releases server: checksum and provenance checks, bad versions and URLs, unsupported platforms, replacing a binary, a truncated script |
 | `features_integration_test.go` | `exclude` and `choices`, `rename`, templated config values (derived inputs asked in dependency order, `env`, patterns, conditions), invalid configs, `inspect`, `-set` / `-no-input` / `-yes` / `-json` |
 
 Put a test for a new command or flag in the file for its area, or in a new `<area>_integration_test.go`. Do not grow `main_test.go`.

@@ -1,4 +1,4 @@
-.PHONY: clean build release test lint deps setup_workspace $(RELEASE_OS)
+.PHONY: clean build release checksums test lint deps setup_workspace $(RELEASE_OS)
 
 # Build directories
 BUILD_DIR := ${PWD}/build
@@ -47,6 +47,13 @@ build: ${BUILD_DIR}
 # Build for all platforms
 release: ${BUILD_DIR} test $(RELEASE_OS)
 	@echo "Building release artifacts..."
+	@$(MAKE) --no-print-directory checksums
+
+# SHA-256 of every release binary, in the format that sha256sum -c and install.sh read
+# (shasum is used because it is on macOS as well as Linux)
+checksums:
+	@echo "Writing checksums..."
+	@cd ${BINARY_DIR} && rm -f checksums.txt && shasum -a 256 ${BINARY_NAME}_* > checksums.txt
 
 $(RELEASE_OS):
 	@for arch in $(RELEASE_ARCH); do \
