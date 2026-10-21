@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/aaron-vaz/skelly/compare/v0.5.0...v0.5.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependencies to their current releases ([#25](https://github.com/aaron-vaz/skelly/issues/25)) ([75e1b83](https://github.com/aaron-vaz/skelly/commit/75e1b8343a173e9e14d74470d680af3defcc9f35))
+
 ## [0.5.0](https://github.com/aaron-vaz/skelly/compare/v0.4.0...v0.5.0) (2026-10-20)
 
 
