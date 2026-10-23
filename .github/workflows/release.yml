@@ -5,27 +5,40 @@ on:
     tags:
       - 'v*'
 
+# The actions here run with a token that can write releases and sign attestations, so they are
+# pinned to commits; Dependabot proposes updates.
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # For the build attestation, which proves the binaries were built by this workflow
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@7b8cf10d4e4a01d4992d18a89f4d7dc5a3e6d6f4 # v4
         with:
           go-version: '1.26'
 
       - name: Build release artifacts
         run: make release
 
+      - name: Attest the build
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: |
+            build/bin/skelly_*
+            build/bin/checksums.txt
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             build/bin/skelly_linux_amd64
             build/bin/skelly_linux_arm64
             build/bin/skelly_darwin_amd64
             build/bin/skelly_darwin_arm64
+            build/bin/checksums.txt

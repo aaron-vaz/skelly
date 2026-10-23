@@ -36,17 +36,44 @@ I found that whenever I started a new projectâ€”whether in Go, Java, or Kotlinâ€
 
 There are a couple of ways to install `skelly`.
 
-### From Release (Recommended)
-
-Download the pre-compiled binary for your operating system from the **latest release page**.
-
-### From Source
-
-Ensure you have Go (1.26 or later) installed on your system.
+### Install Script (Recommended)
 
 ```bash
-go install github.com/aaron-vaz/skelly/cmd/skelly@latest
+curl -fsSL https://raw.githubusercontent.com/aaron-vaz/skelly/main/install.sh | sh
 ```
+
+It downloads the binary for your system from the latest release and checks it against that release's `checksums.txt` before installing it. If the checksum is missing or does not match, nothing is installed. It installs into `~/.local/bin`, so it needs no `sudo`.
+
+```bash
+# a specific version, in another directory
+curl -fsSL https://raw.githubusercontent.com/aaron-vaz/skelly/main/install.sh | sh -s -- -v v0.6.0 -b /usr/local/bin
+
+# also check the build attestation (see below); needs the GitHub CLI (gh)
+curl -fsSL https://raw.githubusercontent.com/aaron-vaz/skelly/main/install.sh | sh -s -- --verify-provenance
+```
+
+The script is plain POSIX `sh`, only talks https, and is written so a download that is cut short runs nothing. To read it first, download it and run it as a file: `curl -fsSLO https://raw.githubusercontent.com/aaron-vaz/skelly/main/install.sh`. `sh install.sh --help` lists the options (`-v`, `-b`, `-p`).
+
+### From Release
+
+Download the pre-compiled binary for your operating system from the **latest release page**, and check it against `checksums.txt` from the same page:
+
+```bash
+shasum -a 256 -c --ignore-missing checksums.txt
+```
+
+#### Verifying a release
+
+Every release has a `checksums.txt` with the SHA-256 of each binary. Releases built from v0.6.0 on are also **attested**: GitHub records that the binaries and the checksums were built by this repository's release workflow, which you can check with the GitHub CLI (`install.sh --verify-provenance` runs the same check, for the tag it installs):
+
+```bash
+gh attestation verify skelly_linux_amd64 --repo aaron-vaz/skelly \
+  --signer-workflow aaron-vaz/skelly/.github/workflows/release.yml
+```
+
+`checksums.txt` is served from the same place as the binaries, so on its own it protects against corruption and against one file being changed, not against someone who can replace the whole release. The attestation is what ties a binary to this repository's release workflow.
+
+The `checksums.txt` of earlier releases was added afterwards, from the binaries as they are published now (and, where GitHub reports a digest for a file, it agrees with it). It shows that a binary does not change from then on, but it was not made by the build and there is no attestation for those releases.
 
 ## Usage
 

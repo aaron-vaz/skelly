@@ -23,5 +23,8 @@ jobs:
     - name: Lint
       run: make lint
 
+    - name: Lint the install script
+      run: shellcheck --shell=sh install.sh
+
     - name: Test
       run: make test

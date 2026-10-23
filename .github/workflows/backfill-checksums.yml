@@ -1,0 +1,85 @@
+name: Backfill checksums
+
+# Releases made before the release workflow wrote checksums.txt get one, so install.sh can
+# verify them too. The hashes are computed from the binaries as they are published now. Where
+# GitHub reports a digest for a file they are checked against it, which catches a corrupt download
+# but not a file that was replaced after the release (GitHub reports the digest of the file as it
+# is now). So the result shows that a binary does not change from now on; it was not made by the
+# build that produced the binary, and there is no build attestation for it.
+#
+# Run it by hand from the Actions tab. It never replaces a checksums.txt that exists.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'A release tag such as v0.5.1, or "all" for every release without a checksums.txt'
+        required: true
+        default: all
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add checksums.txt to the releases that lack one
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [ "$TAG" = all ]; then
+            tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName')
+          elif printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            tags="$TAG"
+          else
+            echo "::error::$TAG is neither all nor a release tag such as v0.5.1"
+            exit 1
+          fi
+
+          for tag in $tags; do
+            echo "== $tag"
+            # name, then the digest GitHub recorded for the file when it was uploaded
+            assets=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
+              --jq '.assets[] | [.name, (.digest // "")] | @tsv')
+
+            if printf '%s\n' "$assets" | cut -f1 | grep -qx checksums.txt; then
+              echo "already has a checksums.txt"
+              continue
+            fi
+            names=$(printf '%s\n' "$assets" | cut -f1 | grep '^skelly_' || true)
+            if [ -z "$names" ]; then
+              echo "::warning::$tag has no skelly binaries, skipping"
+              continue
+            fi
+
+            dir=$(mktemp -d)
+            for name in $names; do
+              gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir "$dir"
+            done
+            (cd "$dir" && shasum -a 256 skelly_* > checksums.txt)
+
+            while IFS=$'\t' read -r name digest; do
+              case "$name" in skelly_*) ;; *) continue ;; esac
+              if [ -z "$digest" ]; then
+                echo "::warning::GitHub reports no digest for $tag $name, so its hash was not cross-checked"
+                continue
+              fi
+              got=$(grep "  $name\$" "$dir/checksums.txt" | cut -d ' ' -f 1)
+              if [ "${digest#sha256:}" != "$got" ]; then
+                echo "::error::$tag $name is $got, but GitHub reports ${digest#sha256:}"
+                exit 1
+              fi
+            done <<< "$assets"
+
+            gh release upload "$tag" "$dir/checksums.txt" --repo "$GITHUB_REPOSITORY"
+            {
+              echo "### $tag"
+              echo '```'
+              cat "$dir/checksums.txt"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
