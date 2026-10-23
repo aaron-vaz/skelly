@@ -176,7 +176,7 @@ destination after download and rendering have fully succeeded.
 
 `install.sh` is plain POSIX `sh`, and everything in it is inside `main`, which runs last, so a truncated download runs nothing. Keep it `shellcheck --shell=sh` clean (CI checks), validate anything that reaches a URL or a path, and fail closed: a missing or mismatched checksum is an error, never a warning. Its tests are in `cmd/skelly/install_integration_test.go`.
 
-`.github/workflows/backfill-checksums.yml` is a manual workflow that adds a `checksums.txt` to releases made before checksums existed.
+The `checksums.txt` of the releases up to v0.5.1 was added afterwards, by a one-off workflow (removed; see the history of `.github/workflows/backfill-checksums.yml`) that hashed the published binaries and compared them with the digests GitHub reports. Those releases therefore have no build attestation, and `install.sh --verify-provenance` refuses them.
 
 ### File Organization
 
