@@ -89,6 +89,7 @@ func NewFlagCommandInvoker(
 		commands.NewInspectCommand(processor, downloader, store, ui),
 		commands.NewSourcesCommand(store, ui),
 		commands.NewHelpCommand(invoker.commands, ui),
+		commands.NewAutocompleteCommand(invoker.commands, store, ui),
 		commands.NewVersionCommand(ui),
 	}
 

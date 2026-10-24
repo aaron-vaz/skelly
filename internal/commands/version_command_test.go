@@ -10,6 +10,7 @@ import (
 
 type mockUI struct {
 	infoMsgs []string
+	errMsgs  []string
 }
 
 func (m *mockUI) RenderInputs(ctx context.Context, inputs map[string]templates.Input) error {
@@ -22,7 +23,10 @@ func (m *mockUI) RenderInfo(message string) error {
 	m.infoMsgs = append(m.infoMsgs, message)
 	return nil
 }
-func (m *mockUI) RenderError(message string) error { return nil }
+func (m *mockUI) RenderError(message string) error {
+	m.errMsgs = append(m.errMsgs, message)
+	return nil
+}
 
 func TestVersionCommand_Run(t *testing.T) {
 	// Given

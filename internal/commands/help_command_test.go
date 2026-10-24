@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"flag"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -120,7 +121,7 @@ func TestHelpCommand_Run_Group(t *testing.T) {
 	}
 
 	// And the group's usage lists its subcommands
-	if len(ui.infoMsgs) != 1 || !strings.Contains(ui.infoMsgs[0], "sub         A subcommand") {
+	if len(ui.infoMsgs) != 1 || !regexp.MustCompile(`(?m)^\s+sub\s+A subcommand$`).MatchString(ui.infoMsgs[0]) {
 		t.Errorf("Expected group usage, got %v", ui.infoMsgs)
 	}
 }

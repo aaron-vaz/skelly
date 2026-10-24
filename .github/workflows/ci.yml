@@ -17,6 +17,9 @@ jobs:
       with:
         go-version: '1.26'
 
+    - name: Install the shells the completion tests drive
+      run: sudo apt-get install -y --no-install-recommends zsh fish
+
     - name: Install dependencies
       run: make deps
 

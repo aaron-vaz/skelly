@@ -18,6 +18,7 @@ Use `-count=1`: the tests depend on the binary and the filesystem, so cached res
 | File | Covers |
 |---|---|
 | `main_test.go` | help, version, `init` basics (prompts, default destination, closed stdin, Ctrl+C, nested names, raw files), `sources` |
+| `autocomplete_integration_test.go` | `autocomplete <shell>` scripts and the completions they give in real bash, zsh and fish (a shell that is not installed is skipped) |
 | `install_integration_test.go` | `install.sh` against a fake releases server: checksum and provenance checks, bad versions and URLs, unsupported platforms, replacing a binary, a truncated script |
 | `features_integration_test.go` | `exclude` and `choices`, `rename`, templated config values (derived inputs asked in dependency order, `env`, patterns, conditions), invalid configs, `inspect`, `-set` / `-no-input` / `-yes` / `-json` |
 

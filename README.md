@@ -75,6 +75,18 @@ gh attestation verify skelly_linux_amd64 --repo aaron-vaz/skelly \
 
 The `checksums.txt` of earlier releases was added afterwards, from the binaries as they are published now (and, where GitHub reports a digest for a file, it agrees with it). It shows that a binary does not change from then on, but it was not made by the build and there is no attestation for those releases.
 
+### Shell Completion
+
+`skelly` completes its commands, flags and the template sources you have registered with `skelly sources`. Add the line for your shell to its startup file:
+
+```bash
+eval "$(skelly autocomplete bash)"          # ~/.bashrc
+eval "$(skelly autocomplete zsh)"           # ~/.zshrc
+skelly autocomplete fish | source           # ~/.config/fish/config.fish
+```
+
+Then `skelly in<TAB>` completes to `init`, `skelly init -<TAB>` lists the flags, `skelly init -dst <TAB>` offers directories, and `skelly init <TAB>` offers your registered aliases and files. The script is small and only asks the installed `skelly` for the candidates each time you press Tab, so completions always match the version you have and you never need to regenerate anything after an upgrade. In zsh, `compinit` is run for you if it has not been. It is tested with bash 5.2, zsh 5.9 and fish 3.7.
+
 ## Usage
 
 The primary command is `init`, which scaffolds a new project from a template into a destination directory.
