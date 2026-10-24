@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/aaron-vaz/skelly/compare/v0.7.0...v0.7.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* skip the install when the latest version is already installed ([#38](https://github.com/aaron-vaz/skelly/issues/38)) ([9d7f31b](https://github.com/aaron-vaz/skelly/commit/9d7f31b76d012d0feccc51be5e4baa76039fd924))
+
 ## [0.7.0](https://github.com/aaron-vaz/skelly/compare/v0.6.0...v0.7.0) (2026-10-24)
 
 
