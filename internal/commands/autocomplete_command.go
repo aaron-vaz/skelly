@@ -103,7 +103,11 @@ func (c *AutocompleteCompleteCommand) aliases() []string {
 	}
 	aliases := make([]string, 0, len(cfg.Sources))
 	for alias := range cfg.Sources {
-		aliases = append(aliases, alias)
+		// A config edited by hand can hold keys that no alias could be, such as one with a
+		// newline, which would be read as more than one candidate
+		if config.IsAlias(alias) {
+			aliases = append(aliases, alias)
+		}
 	}
 	slices.Sort(aliases)
 	return aliases

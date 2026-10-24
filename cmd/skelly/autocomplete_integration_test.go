@@ -57,6 +57,13 @@ func newCompletionSetup(t *testing.T) completionSetup {
 // runShell runs a script in a shell, in the work directory, and returns what it printed.
 func (s completionSetup) runShell(t *testing.T, shell string, script string, args ...string) string {
 	t.Helper()
+	stdout, _ := s.runShellStreams(t, shell, script, args...)
+	return stdout
+}
+
+// runShellStreams is runShell that also returns what the shell wrote to stderr.
+func (s completionSetup) runShellStreams(t *testing.T, shell string, script string, args ...string) (string, string) {
+	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -83,7 +90,7 @@ func (s completionSetup) runShell(t *testing.T, shell string, script string, arg
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("%s failed: %v\nstderr: %s", shell, err, stderr.String())
 	}
-	return stdout.String()
+	return stdout.String(), stderr.String()
 }
 
 func needShell(t *testing.T, shell string) {
@@ -184,6 +191,12 @@ func TestIntegration_Autocomplete_Bash(t *testing.T) {
 		{"only directories for -dst", []string{"skelly", "init", "-dst", ""}, []string{"outdir", "with space"}},
 		{"only aliases to remove", []string{"skelly", "sources", "remove", ""}, []string{"go", "kotlin"}},
 		{"nothing for a switch's value", []string{"skelly", "init", "-set", ""}, nil},
+		// bash splits -dst=dir into -dst, = and dir
+		{"directories after a split =", []string{"skelly", "init", "-dst", "=", ""}, []string{"outdir", "with space"}},
+		{"directories while typing the =", []string{"skelly", "init", "-dst", "="}, []string{"outdir", "with space"}},
+		{"a directory by prefix after a split =", []string{"skelly", "init", "-dst", "=", "ou"}, []string{"outdir"}},
+		{"no file after a split = of a directory flag", []string{"skelly", "init", "-dst", "=", "t"}, nil},
+		{"the subcommands of a group for help", []string{"skelly", "help", "sources", ""}, []string{"add", "list", "remove"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -264,6 +277,56 @@ _skelly`
 			slices.Sort(want)
 			if !slices.Equal(got, want) {
 				t.Errorf("completing %q gave %q, want %q", tt.words, got, want)
+			}
+		})
+	}
+}
+
+func TestIntegration_Autocomplete_FishIsQuietWithoutSkelly(t *testing.T) {
+	needShell(t, "fish")
+	setup := newCompletionSetup(t)
+
+	// Given the script is loaded, and skelly then goes missing from the PATH
+	script := `skelly autocomplete fish | source; set -gx PATH /usr/bin /bin; complete -C "skelly init "`
+
+	// When fish completes
+	stdout, stderr := setup.runShellStreams(t, "fish", script)
+
+	// Then it says nothing, instead of an error and a stack trace on every Tab
+	if stdout != "" || stderr != "" {
+		t.Errorf("expected no output, got stdout %q and stderr %q", stdout, stderr)
+	}
+}
+
+func TestIntegration_Autocomplete_ZshRegistersWhateverTheOrderOfCompinit(t *testing.T) {
+	needShell(t, "zsh")
+	setup := newCompletionSetup(t)
+	// A shell that is not interactive never shows a prompt, so the hooks that run before one are run by hand
+	prompt := `for f in $precmd_functions; do $f; done`
+
+	tests := []struct {
+		name   string
+		script string
+		want   string
+	}{
+		{"the eval before compinit, as in a startup file that ends with compinit", `eval "$(skelly autocomplete zsh)"; autoload -Uz compinit; compinit -u -d "$ZDOTDIR/dump"; ` + prompt, "_skelly"},
+		{"the eval after compinit", `autoload -Uz compinit; compinit -u -d "$ZDOTDIR/dump"; eval "$(skelly autocomplete zsh)"; ` + prompt, "_skelly"},
+		{"no compinit at all registers nothing and says nothing", `eval "$(skelly autocomplete zsh)"; ` + prompt, "<none>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given a shell with its own completion cache directory
+			zdotdir := t.TempDir()
+
+			// When the startup file is run, and then the first prompt
+			got := setup.runShell(t, "zsh", `export ZDOTDIR=`+zdotdir+`; `+tt.script+`; print -r -- ${_comps[skelly]:-<none>}`)
+
+			// Then skelly is completed by the script, or nothing is, and the hook is gone
+			if strings.TrimSpace(got) != tt.want {
+				t.Errorf("_comps[skelly] = %q, want %q", strings.TrimSpace(got), tt.want)
+			}
+			if _, err := os.Stat(filepath.Join(zdotdir, "dump")); tt.want == "<none>" && err == nil {
+				t.Error("the script ran compinit, which it must leave to the user")
 			}
 		})
 	}

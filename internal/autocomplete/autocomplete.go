@@ -112,11 +112,14 @@ func Complete(spec Spec, args []string, aliases func() []string) Result {
 		cmd         *Cmd
 		pending     *Flag
 		positional  int
+		arguments   []string
 		onlyArgs    bool
 		nothingMore = Result{Directive: NoFiles}
 	)
 	for _, word := range words {
 		switch {
+		case pending != nil && word == "=":
+			// bash splits -dst=dir into -dst, = and dir, so the = only joins the flag to its value
 		case pending != nil:
 			// This word is the value of the flag before it
 			pending = nil
@@ -134,6 +137,7 @@ func Complete(spec Spec, args []string, aliases func() []string) Result {
 				}
 			}
 			positional++
+			arguments = append(arguments, word)
 		case word == "--":
 			onlyArgs = true
 		default:
@@ -141,9 +145,13 @@ func Complete(spec Spec, args []string, aliases func() []string) Result {
 		}
 	}
 
+	if pending != nil && cur == "=" {
+		cur = ""
+	}
+
 	switch {
 	case pending != nil:
-		return kindResult(pending.Value, cur, spec, aliases)
+		return kindResult(pending.Value, cur, nil, spec, aliases)
 	case strings.HasPrefix(cur, "-") && !onlyArgs:
 		if cmd == nil {
 			return nothingMore
@@ -156,10 +164,14 @@ func Complete(spec Spec, args []string, aliases func() []string) Result {
 	}
 
 	kind := None
-	if positional < len(cmd.Args) {
+	switch {
+	case positional < len(cmd.Args):
 		kind = cmd.Args[positional]
+	case len(cmd.Args) > 0 && cmd.Args[len(cmd.Args)-1] == Command:
+		// A command name can be followed by the subcommands of that command, as in help sources add
+		kind = Command
 	}
-	return kindResult(kind, cur, spec, aliases)
+	return kindResult(kind, cur, arguments, spec, aliases)
 }
 
 // Summary shortens a description to its first sentence or clause, on one line.
@@ -238,7 +250,7 @@ func flagResult(cmd *Cmd, cur string) Result {
 	return result
 }
 
-func kindResult(kind Kind, cur string, spec Spec, aliases func() []string) Result {
+func kindResult(kind Kind, cur string, previous []string, spec Spec, aliases func() []string) Result {
 	result := Result{Directive: NoFiles}
 	switch kind {
 	case Dir:
@@ -251,10 +263,23 @@ func kindResult(kind Kind, cur string, spec Spec, aliases func() []string) Resul
 	case Alias:
 		result.Candidates = aliasCandidates(aliases, cur)
 	case Command:
-		result.Candidates = commandResult(spec.Commands, cur).Candidates
+		result.Candidates = commandResult(commandsAfter(spec.Commands, previous), cur).Candidates
 	case None:
 	}
 	return result
+}
+
+// commandsAfter returns the commands that can follow the names of a command path, such as the
+// subcommands of "sources" for [sources].
+func commandsAfter(cmds []Cmd, path []string) []Cmd {
+	for _, name := range path {
+		c := find(cmds, name)
+		if c == nil {
+			return nil
+		}
+		cmds = c.Subcommands
+	}
+	return cmds
 }
 
 func aliasCandidates(aliases func() []string, cur string) []Candidate {

@@ -153,6 +153,9 @@ func TestAutocompleteCompleteCommand(t *testing.T) {
 	}{
 		{"registered aliases, sorted, and files", registered, []string{"init", ""}, "go\tregistered template\nkotlin\tregistered template\n:files"},
 		{"flags", registered, []string{"inspect", "-s"}, "-src\tURL, path or registered alias of the template to inspect\n:none"},
+		{"keys no alias could be are not suggested", &mockStore{cfg: config.Config{Sources: map[string]config.Source{
+			"ok": {URL: "github.com/a/b"}, "bad\nINJECTED": {URL: "x"}, "tab\tkey": {URL: "x"}, ":files": {URL: "x"}, "-x": {URL: "x"},
+		}}}, []string{"sources", "remove", ""}, "ok\tregistered template\n:none"},
 		{"an unreadable config offers no aliases", &mockStore{loadErr: errors.New("broken")}, []string{"init", ""}, ":files"},
 	}
 	for _, tt := range tests {

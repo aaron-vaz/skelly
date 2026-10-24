@@ -10,6 +10,8 @@ const bashScript = `# bash completion for skelly. Add this to ~/.bashrc:
 _skelly_complete() {
     local cur line directive=none flag out
     cur="${COMP_WORDS[COMP_CWORD]}"
+    # bash splits -dst=dir into -dst, = and dir, and a lone = has nothing to match
+    [[ $cur == "=" ]] && cur=""
     COMPREPLY=()
 
     out=$(skelly autocomplete complete -- "${COMP_WORDS[@]:1:COMP_CWORD}" 2>/dev/null) || return 0
@@ -66,17 +68,24 @@ _skelly() {
         dirs) _files -/ ;;
     esac
 }
-if (( $+functions[compdef] )); then
-    compdef _skelly skelly
-else
-    # compinit has not run yet, so run it for the completion to work
-    autoload -Uz compinit && compinit && compdef _skelly skelly
-fi
+
+# compdef only exists once compinit has run, and a compinit that runs later forgets what was
+# registered before it. So this registers now if it can, and again on the first prompt, after
+# the whole startup file has run, whichever way round the eval and compinit are.
+_skelly_register() {
+    add-zsh-hook -d precmd _skelly_register
+    unfunction _skelly_register
+    (( $+functions[compdef] )) && compdef _skelly skelly
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _skelly_register
+(( $+functions[compdef] )) && compdef _skelly skelly
 `
 
 const fishScript = `# fish completion for skelly. Add this to ~/.config/fish/config.fish:
 #   skelly autocomplete fish | source
 function __skelly_complete
+    command -sq skelly; or return
     set -l cur (commandline -ct)
     set -l words (commandline -opc)
     set -e words[1]

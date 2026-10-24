@@ -85,7 +85,7 @@ eval "$(skelly autocomplete zsh)"           # ~/.zshrc
 skelly autocomplete fish | source           # ~/.config/fish/config.fish
 ```
 
-Then `skelly in<TAB>` completes to `init`, `skelly init -<TAB>` lists the flags, `skelly init -dst <TAB>` offers directories, and `skelly init <TAB>` offers your registered aliases and files. The script is small and only asks the installed `skelly` for the candidates each time you press Tab, so completions always match the version you have and you never need to regenerate anything after an upgrade. In zsh, `compinit` is run for you if it has not been. It is tested with bash 5.2, zsh 5.9 and fish 3.7.
+Then `skelly in<TAB>` completes to `init`, `skelly init -<TAB>` lists the flags, `skelly init -dst <TAB>` offers directories, and `skelly init <TAB>` offers your registered aliases and files. The script is small and only asks the installed `skelly` for the candidates each time you press Tab, so completions always match the version you have and you never need to regenerate anything after an upgrade. zsh needs `compinit`, which most setups already run; the completion is registered on the first prompt, so it does not matter whether the line comes before or after `compinit` in `~/.zshrc`. It is tested with bash 5.2, zsh 5.9 and fish 3.7.
 
 ## Usage
 

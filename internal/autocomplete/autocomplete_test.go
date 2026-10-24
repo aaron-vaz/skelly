@@ -83,6 +83,18 @@ func TestComplete(t *testing.T) {
 		{"help takes commands", []string{"help", ""}, []string{"init", "inspect", "sources", "help", "version"}, NoFiles},
 		{"nothing for a command without arguments", []string{"version", ""}, nil, NoFiles},
 		{"flags before a command", []string{"-"}, nil, NoFiles},
+		{"help takes the subcommands of a group", []string{"help", "sources", ""}, []string{"add", "list", "remove"}, NoFiles},
+		{"help takes a subcommand by prefix", []string{"help", "sources", "l"}, []string{"list"}, NoFiles},
+		{"help has nothing to add to a command without subcommands", []string{"help", "init", ""}, nil, NoFiles},
+		{"help has nothing to add to a subcommand", []string{"help", "sources", "add", ""}, nil, NoFiles},
+		{"help of an unknown command", []string{"help", "nope", ""}, nil, NoFiles},
+		// bash splits -dst=dir into -dst, = and dir
+		{"a split = joins the flag to its value", []string{"init", "-dst", "=", ""}, nil, Dirs},
+		{"a split = being typed", []string{"init", "-dst", "="}, nil, Dirs},
+		{"a split = and a start of the value", []string{"init", "-dst", "=", "ou"}, nil, Dirs},
+		{"a split = after a source flag", []string{"init", "-src", "=", "k"}, []string{"kotlin"}, Files},
+		{"a split = being typed after a source flag", []string{"init", "-src", "="}, []string{"go", "kotlin"}, Files},
+		{"a split = after a switch is an argument", []string{"init", "-yes", "="}, nil, Files},
 	}
 
 	for _, tt := range tests {
