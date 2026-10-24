@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/aaron-vaz/skelly/compare/v0.5.1...v0.6.0) (2026-10-24)
+
+
+### Features
+
+* add a checksum-verifying install script, release checksums and provenance ([#27](https://github.com/aaron-vaz/skelly/issues/27)) ([f527459](https://github.com/aaron-vaz/skelly/commit/f5274593749642a41965a576605fae009d3e1d38))
+
 ## [0.5.1](https://github.com/aaron-vaz/skelly/compare/v0.5.0...v0.5.1) (2026-10-21)
 
 
