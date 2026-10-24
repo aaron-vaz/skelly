@@ -42,7 +42,7 @@ There are a couple of ways to install `skelly`.
 curl -fsSL https://raw.githubusercontent.com/aaron-vaz/skelly/main/install.sh | sh
 ```
 
-It downloads the binary for your system from the latest release and checks it against that release's `checksums.txt` before installing it. If the checksum is missing or does not match, nothing is installed. It installs into `~/.local/bin`, so it needs no `sudo`.
+It downloads the binary for your system from the latest release and checks it against that release's `checksums.txt` before installing it. If the checksum is missing or does not match, nothing is installed. It installs into `~/.local/bin`, so it needs no `sudo`. Run it again to update: if the version it would install is already there, it says so and changes nothing (`--force` installs it anyway, and `--verify-provenance` always checks).
 
 ```bash
 # a specific version, in another directory
@@ -52,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/aaron-vaz/skelly/main/install.sh | 
 curl -fsSL https://raw.githubusercontent.com/aaron-vaz/skelly/main/install.sh | sh -s -- --verify-provenance
 ```
 
-The script is plain POSIX `sh`, only talks https, and is written so a download that is cut short runs nothing. To read it first, download it and run it as a file: `curl -fsSLO https://raw.githubusercontent.com/aaron-vaz/skelly/main/install.sh`. `sh install.sh --help` lists the options (`-v`, `-b`, `-p`).
+The script is plain POSIX `sh`, only talks https, and is written so a download that is cut short runs nothing. To read it first, download it and run it as a file: `curl -fsSLO https://raw.githubusercontent.com/aaron-vaz/skelly/main/install.sh`. `sh install.sh --help` lists the options (`-v`, `-b`, `-p`, `-f`).
 
 ### From Release
 

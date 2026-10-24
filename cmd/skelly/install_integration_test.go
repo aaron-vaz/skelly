@@ -402,6 +402,60 @@ func TestIntegration_Install_ReplacesAnExistingBinary(t *testing.T) {
 	}
 }
 
+func TestIntegration_Install_SkipsTheVersionThatIsAlreadyInstalled(t *testing.T) {
+	// installed reports a version, and has a marker so a reinstall can be told apart
+	installed := func(tag string) string {
+		return "#!/bin/sh\necho \"skelly version " + tag + "\"\n# installed before\n"
+	}
+
+	tests := []struct {
+		name       string
+		installed  string
+		args       []string
+		stubs      map[string]string
+		wantSkip   bool
+		wantOutput string
+	}{
+		{name: "same version", installed: installed("v1.2.3"), wantSkip: true, wantOutput: "skelly v1.2.3 is already installed"},
+		{name: "older version", installed: installed("v1.0.0")},
+		{name: "same version with --force", installed: installed("v1.2.3"), args: []string{"--force"}},
+		{name: "same version with --verify-provenance", installed: installed("v1.2.3"), args: []string{"-p"}, stubs: map[string]string{"gh": "exit 0\n"}},
+		{name: "a binary that does not report a version", installed: "old"},
+		{name: "a binary that fails", installed: "#!/bin/sh\nexit 1\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Given skelly is installed and the latest release is v1.2.3
+			rel, _ := goodRelease(t, "v1.2.3", "v1.2.3")
+			binDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(binDir, "skelly"), []byte(tt.installed), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			// When install.sh is run
+			result := runInstall(t, installOptions{baseURL: rel.server.URL, stubs: tt.stubs}, append([]string{"-b", binDir}, tt.args...)...)
+
+			// Then it succeeds
+			if result.err != nil {
+				t.Fatalf("err = %v, stderr: %s", result.err, result.stderr)
+			}
+			if tt.wantSkip {
+				// And an installed version that is the latest one is left alone, and nothing is downloaded
+				assertContent(t, filepath.Join(binDir, "skelly"), tt.installed)
+				if !strings.Contains(result.stdout, tt.wantOutput) || strings.Contains(result.stdout, "Installing") {
+					t.Errorf("expected only %q, got %s", tt.wantOutput, result.stdout)
+				}
+				if got := rel.requests.Load(); got != 2 {
+					t.Errorf("expected only the lookup of the latest version (a redirect and the page), got %d requests", got)
+				}
+				return
+			}
+			// And in every other case the release is installed
+			assertContent(t, filepath.Join(binDir, "skelly"), string(fakeBinary("v1.2.3")))
+		})
+	}
+}
+
 func TestIntegration_Install_FailedChecksumKeepsTheOldBinary(t *testing.T) {
 	// Given skelly is installed and the new release does not match its checksum
 	asset := hostAsset(t)
