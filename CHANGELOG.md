@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/aaron-vaz/skelly/compare/v0.6.0...v0.7.0) (2026-10-24)
+
+
+### Features
+
+* add shell completion for bash, zsh and fish ([#36](https://github.com/aaron-vaz/skelly/issues/36)) ([01a4ad0](https://github.com/aaron-vaz/skelly/commit/01a4ad035eeb0428374e9e1d1de71b13670162b6))
+
 ## [0.6.0](https://github.com/aaron-vaz/skelly/compare/v0.5.1...v0.6.0) (2026-10-24)
 
 
