@@ -46,6 +46,7 @@ Options (each can also be set in the environment):
   -v, --version VERSION    a release tag such as v0.6.0 (SKELLY_VERSION), the latest release by default
   -b, --bin-dir DIR        where to put skelly (SKELLY_INSTALL_DIR), $HOME/.local/bin by default
   -p, --verify-provenance  also check the build attestation with the GitHub CLI (gh), which must be installed
+  -f, --force              install even if this version is already installed
   -h, --help               show this text
 USAGE
 }
@@ -185,10 +186,17 @@ install_binary() {
     staged=""
 }
 
+# installed_version prints the version of the skelly in a directory, or nothing if there is none.
+installed_version() {
+    [ -x "$1/skelly" ] || return 0
+    "$1/skelly" version 2>/dev/null </dev/null | awk 'NR == 1 { print $NF }'
+}
+
 main() {
     version="${SKELLY_VERSION:-}"
     bin_dir="${SKELLY_INSTALL_DIR:-}"
     provenance=0
+    force=0
 
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -204,6 +212,10 @@ main() {
                 ;;
             -p | --verify-provenance)
                 provenance=1
+                shift
+                ;;
+            -f | --force)
+                force=1
                 shift
                 ;;
             -h | --help)
@@ -243,6 +255,12 @@ main() {
     if [ -z "$version" ]; then
         version=$(latest_version)
         valid_version "$version" || die "the latest release is called $version, which is not a release version"
+    fi
+
+    # --verify-provenance asks for a check, so it is never skipped
+    if [ "$force" -eq 0 ] && [ "$provenance" -eq 0 ] && [ "$(installed_version "$bin_dir")" = "$version" ]; then
+        say "skelly $version is already installed in $bin_dir (use --force to install it again)"
+        exit 0
     fi
 
     asset="skelly_${os}_${arch}"
