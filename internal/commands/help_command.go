@@ -74,7 +74,7 @@ func (c *HelpCommand) usage() string {
 	slices.Sort(names)
 
 	for _, name := range names {
-		fmt.Fprintf(&b, "    %-11s %s\n", name, c.commands[name].Description())
+		fmt.Fprintf(&b, "    %-12s %s\n", name, c.commands[name].Description())
 	}
 
 	b.WriteString("\nRun 'skelly help COMMAND' for command-specific help")

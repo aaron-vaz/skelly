@@ -54,6 +54,7 @@ make deps       # Install dependencies and golangci-lint
 ```
 cmd/skelly/        # Main entry point
 internal/          # Private packages (not importable externally)
+  autocomplete/    # Completion of a command line, and the bash/zsh/fish scripts that ask for it
   cli/             # CLI parsing and command invocation
   commands/        # Command implementations (Group nests subcommands, e.g. "sources add"); init, inspect, sources, help, version
   config/          # User config file (registered template sources, settings)
@@ -177,6 +178,10 @@ destination after download and rendering have fully succeeded.
 `install.sh` is plain POSIX `sh`, and everything in it is inside `main`, which runs last, so a truncated download runs nothing. Keep it `shellcheck --shell=sh` clean (CI checks), validate anything that reaches a URL or a path, and fail closed: a missing or mismatched checksum is an error, never a warning. Its tests are in `cmd/skelly/install_integration_test.go`.
 
 The `checksums.txt` of the releases up to v0.5.1 was added afterwards, by a one-off workflow (removed; see the history of `.github/workflows/backfill-checksums.yml`) that hashed the published binaries and compared them with the digests GitHub reports. Those releases therefore have no build attestation, and `install.sh --verify-provenance` refuses them.
+
+### Shell completion
+
+`skelly autocomplete <bash|zsh|fish>` prints a script for the user's startup file, and the script calls `skelly autocomplete complete -- <words>` on every Tab. All the logic is in `autocomplete.Complete` (`internal/autocomplete`), so keep the scripts thin and put new behaviour there, where it is unit tested. The commands, subcommands and flags are read from the real commands (`Init` and `Group`), so a new flag or command is completed without any change. What a flag value or a positional argument is completed with (a directory, a template alias or source) is in `completionHints` in `internal/commands/autocomplete_command.go`: add an entry for a command that takes one. A test fails if a hint names a flag that no longer exists. A completion must never fail loudly or print anything but candidates on stdout, because it is run for every keypress and its output is parsed. The shell tests are in `cmd/skelly/autocomplete_integration_test.go` and run each shell that is installed.
 
 ### File Organization
 

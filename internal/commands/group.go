@@ -33,21 +33,36 @@ func (g *Group) Description() string {
 // Init is a no-op as a group has no flags of its own.
 func (g *Group) Init(flags *flag.FlagSet) {}
 
-// Run shows the group's usage, failing if args name an unknown subcommand.
+// Run shows the group's usage, failing if args name an unknown subcommand. The usage goes
+// to stderr for that failure, so that nothing but the error is left for a program (such as
+// an eval of 'skelly autocomplete <shell>') to read from stdout.
 func (g *Group) Run(ctx context.Context, args []string) error {
-	if err := g.ui.RenderInfo(g.Usage()); err != nil {
-		return err
-	}
 	if len(args) > 0 {
+		_ = g.ui.RenderError(g.Usage())
 		return fmt.Errorf("unknown command: %s %s", g.name, args[0])
 	}
-	return nil
+	return g.ui.RenderInfo(g.Usage())
 }
 
 // Subcommand returns the subcommand called name.
 func (g *Group) Subcommand(name string) (Command, bool) {
 	cmd, ok := g.subcommands[name]
 	return cmd, ok
+}
+
+// Subcommands returns the subcommands, sorted by name.
+func (g *Group) Subcommands() []Command {
+	names := make([]string, 0, len(g.subcommands))
+	for name := range g.subcommands {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	subcommands := make([]Command, 0, len(names))
+	for _, name := range names {
+		subcommands = append(subcommands, g.subcommands[name])
+	}
+	return subcommands
 }
 
 // Usage describes the group and lists its subcommands.
@@ -62,7 +77,7 @@ func (g *Group) Usage() string {
 	slices.Sort(names)
 
 	for _, name := range names {
-		fmt.Fprintf(&b, "    %-11s %s\n", name, g.subcommands[name].Description())
+		fmt.Fprintf(&b, "    %-12s %s\n", name, g.subcommands[name].Description())
 	}
 
 	fmt.Fprintf(&b, "\nRun 'skelly help %s COMMAND' for command-specific help", g.name)

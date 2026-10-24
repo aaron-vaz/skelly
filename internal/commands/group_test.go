@@ -43,9 +43,11 @@ func TestGroup_Run(t *testing.T) {
 		name    string
 		args    []string
 		wantErr string
+		// usageOnStderr is where the usage is shown: stdout, unless the command was unknown
+		usageOnStderr bool
 	}{
 		{name: "no subcommand shows usage"},
-		{name: "unknown subcommand", args: []string{"nope"}, wantErr: "unknown command: sources nope"},
+		{name: "unknown subcommand", args: []string{"nope"}, wantErr: "unknown command: sources nope", usageOnStderr: true},
 	}
 
 	for _, tt := range tests {
@@ -66,9 +68,16 @@ func TestGroup_Run(t *testing.T) {
 				t.Errorf("Run() unexpected error: %v", err)
 			}
 
-			// And
-			if len(ui.infoMsgs) != 1 || !strings.Contains(ui.infoMsgs[0], "Usage: skelly sources COMMAND") || !strings.Contains(ui.infoMsgs[0], "list") {
-				t.Errorf("Expected group usage, got %q", ui.infoMsgs)
+			// And the usage is shown, on stderr when the command failed so stdout stays empty
+			shown, other := ui.infoMsgs, ui.errMsgs
+			if tt.usageOnStderr {
+				shown, other = ui.errMsgs, ui.infoMsgs
+			}
+			if len(shown) != 1 || !strings.Contains(shown[0], "Usage: skelly sources COMMAND") || !strings.Contains(shown[0], "list") {
+				t.Errorf("Expected group usage, got %q", shown)
+			}
+			if len(other) != 0 {
+				t.Errorf("Expected nothing on the other stream, got %q", other)
 			}
 		})
 	}
